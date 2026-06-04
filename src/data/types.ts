@@ -78,6 +78,18 @@ export interface Order {
   paymentMethod: 'cod'
 }
 
+export interface ContactMessage {
+  id: string
+  created_at: string
+  name: string
+  email: string
+  phone?: string | null
+  subject?: string | null
+  message: string
+  is_read: boolean
+  replied: boolean
+}
+
 export interface AnalyticsEvent {
   id: string
   type: 'page_view' | 'product_view' | 'add_to_cart' | 'begin_checkout' | 'purchase'

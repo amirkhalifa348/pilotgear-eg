@@ -1,11 +1,13 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet } from 'react-router-dom'
-import { BarChart3, Boxes, ExternalLink, LayoutDashboard, LayoutTemplate, LogOut, Menu, Package, Settings as SettingsIcon, ShoppingCart, Tags, X } from 'lucide-react'
+import { BarChart3, Boxes, ExternalLink, LayoutDashboard, LayoutTemplate, LogOut, Mail, Menu, Package, Settings as SettingsIcon, ShoppingCart, Tags, X } from 'lucide-react'
 import { adminLogout, useStore } from '../data/store'
+import { supabase } from '../data/supabase'
 
 const nav = [
   { to: '/admin', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/admin/orders', label: 'Orders', icon: ShoppingCart },
+  { to: '/admin/messages', label: 'Messages', icon: Mail },
   { to: '/admin/products', label: 'Products', icon: Package },
   { to: '/admin/collections', label: 'Collections', icon: Tags },
   { to: '/admin/inventory', label: 'Inventory', icon: Boxes },
@@ -17,6 +19,24 @@ export default function AdminLayout({ onLogout }: { onLogout: () => void }) {
   const orders = useStore((d) => d.orders)
   const pending = orders.filter((o) => o.status === 'pending').length
   const [open, setOpen] = useState(false)
+  const [unreadMsgs, setUnreadMsgs] = useState(0)
+
+  useEffect(() => {
+    let cancelled = false
+    const refresh = async () => {
+      const { count } = await supabase
+        .from('messages')
+        .select('id', { count: 'exact', head: true })
+        .eq('is_read', false)
+      if (!cancelled && typeof count === 'number') setUnreadMsgs(count)
+    }
+    refresh()
+    const ch = supabase
+      .channel('messages-badge')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, refresh)
+      .subscribe()
+    return () => { cancelled = true; supabase.removeChannel(ch) }
+  }, [])
 
   const SidebarContent = (
     <>
@@ -38,6 +58,9 @@ export default function AdminLayout({ onLogout }: { onLogout: () => void }) {
             <n.icon size={18} /> {n.label}
             {n.to === '/admin/orders' && pending > 0 && (
               <span className="ml-auto grid h-5 min-w-5 place-items-center rounded-full bg-red-500 px-1 text-[11px] font-bold text-white">{pending}</span>
+            )}
+            {n.to === '/admin/messages' && unreadMsgs > 0 && (
+              <span className="ml-auto grid h-5 min-w-5 place-items-center rounded-full bg-gold px-1 text-[11px] font-bold text-navy-deep">{unreadMsgs}</span>
             )}
           </NavLink>
         ))}
