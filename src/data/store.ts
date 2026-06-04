@@ -36,14 +36,9 @@ function subscribe(cb: () => void) {
 
 /** Pull synced fields from a remote payload while keeping local orders/events */
 function applyRemote(remote: SyncedData) {
-  data = {
-    ...data,
-    version: remote.version,
-    products: remote.products,
-    collections: remote.collections,
-    homepage: remote.homepage,
-    settings: remote.settings,
-  }
+  // Spread all synced fields — keeps orders/events local-only.
+  // Using spread means any new fields added to SyncedData are auto-included.
+  data = { ...data, ...remote }
   try { localStorage.setItem(KEY, JSON.stringify(data)) } catch {}
   listeners.forEach((l) => l())
 }
@@ -155,6 +150,41 @@ if (typeof window !== 'undefined') {
     })
     .subscribe()
 
+  // ── Polling fallback (30 s) ───────────────────────────────────────────────
+  // Realtime WebSockets drop frequently on mobile (tab backgrounding, network
+  // switches, iOS Safari throttling). Polling guarantees changes arrive even
+  // when the realtime channel is dead.
+  const POLL_MS = 30_000
+  let pollTimer: ReturnType<typeof setInterval> | null = null
+
+  function startPolling() {
+    if (pollTimer) return
+    pollTimer = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        pullFromSupabase()
+        pullOrdersFromSupabase()
+      }
+    }, POLL_MS)
+  }
+
+  startPolling()
+
+  // ── Re-sync when tab becomes visible again ───────────────────────────────
+  // Mobile browsers suspend background tabs; the WebSocket dies silently.
+  // Pulling immediately on focus gives instant freshness when the user returns.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      pullFromSupabase()
+      pullOrdersFromSupabase()
+    }
+  })
+
+  // ── Re-sync when device comes back online ────────────────────────────────
+  window.addEventListener('online', () => {
+    pullFromSupabase()
+    pullOrdersFromSupabase()
+  })
+
   // Vite HMR: tear down channels before this module is replaced so the next
   // hot instance can re-subscribe cleanly without the "after subscribe()" error.
   const hot = (import.meta as any).hot
@@ -162,6 +192,7 @@ if (typeof window !== 'undefined') {
     hot.dispose(() => {
       supabase.removeAllChannels()
       if (writeTimer) clearTimeout(writeTimer)
+      if (pollTimer) clearInterval(pollTimer)
     })
   }
 }
