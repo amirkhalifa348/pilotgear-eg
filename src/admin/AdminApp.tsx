@@ -4,6 +4,7 @@ import { isAdminAuthed } from '../data/store'
 import AdminLogin from './AdminLogin'
 import AdminLayout from './AdminLayout'
 import Dashboard from './pages/Dashboard'
+import Assistant from './pages/Assistant'
 import Products from './pages/Products'
 import ProductEditor from './pages/ProductEditor'
 import Collections from './pages/Collections'
@@ -20,6 +21,7 @@ export default function AdminApp() {
     <Routes>
       <Route element={<AdminLayout onLogout={() => setAuthed(false)} />}>
         <Route index element={<Dashboard />} />
+        <Route path="assistant" element={<Assistant />} />
         <Route path="products" element={<Products />} />
         <Route path="products/new" element={<ProductEditor />} />
         <Route path="products/:id" element={<ProductEditor />} />

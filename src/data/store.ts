@@ -157,8 +157,9 @@ if (typeof window !== 'undefined') {
 
   // Vite HMR: tear down channels before this module is replaced so the next
   // hot instance can re-subscribe cleanly without the "after subscribe()" error.
-  if (import.meta.hot) {
-    import.meta.hot.dispose(() => {
+  const hot = (import.meta as any).hot
+  if (hot) {
+    hot.dispose(() => {
       supabase.removeAllChannels()
       if (writeTimer) clearTimeout(writeTimer)
     })

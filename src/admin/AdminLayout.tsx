@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet } from 'react-router-dom'
-import { BarChart3, Boxes, ExternalLink, LayoutDashboard, LayoutTemplate, LogOut, Mail, Menu, Package, Settings as SettingsIcon, ShoppingCart, Tags, X } from 'lucide-react'
+import { BarChart3, Boxes, ExternalLink, LayoutDashboard, LayoutTemplate, LogOut, Mail, Menu, Package, Settings as SettingsIcon, ShoppingCart, Sparkles, Tags, X } from 'lucide-react'
 import { adminLogout, useStore } from '../data/store'
 import { supabase } from '../data/supabase'
 
 const nav = [
   { to: '/admin', label: 'Dashboard', icon: LayoutDashboard, end: true },
+  { to: '/admin/assistant', label: 'AI Assistant', icon: Sparkles },
   { to: '/admin/orders', label: 'Orders', icon: ShoppingCart },
   { to: '/admin/messages', label: 'Messages', icon: Mail },
   { to: '/admin/products', label: 'Products', icon: Package },
