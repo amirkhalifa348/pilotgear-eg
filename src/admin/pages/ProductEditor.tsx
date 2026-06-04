@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, GripVertical, Plus, Trash2, Upload, X } from 'lucide-react'
 import { uid, upsertProduct, useStore } from '../../data/store'
-import type { Product } from '../../data/types'
+import type { Product, ProductVariant } from '../../data/types'
 import { Toast } from '../ui'
 
 function slugify(s: string) {
@@ -41,6 +41,28 @@ export default function ProductEditor() {
       reader.onload = () => setP((x) => ({ ...x, images: [...x.images, reader.result as string] }))
       reader.readAsDataURL(f)
     })
+  }
+
+  function updateVariant(i: number, patch: Partial<ProductVariant>) {
+    setP((x) => ({ ...x, variants: (x.variants || []).map((v, n) => (n === i ? { ...v, ...patch } : v)) }))
+  }
+
+  function setVariantImage(i: number, file: File | null | undefined) {
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => updateVariant(i, { image: reader.result as string })
+    reader.readAsDataURL(file)
+  }
+
+  function addVariant() {
+    setP((x) => ({
+      ...x,
+      variants: [...(x.variants || []), { id: uid('v'), name: '', priceDelta: 0, stock: 0 }],
+    }))
+  }
+
+  function removeVariant(i: number) {
+    setP((x) => ({ ...x, variants: (x.variants || []).filter((_, n) => n !== i) }))
   }
 
   function save() {
@@ -120,6 +142,64 @@ export default function ProductEditor() {
               </div>
             ))}
             <button onClick={() => set('specs', [...p.specs, { label: '', value: '' }])} className="btn-ghost mt-1 text-sm"><Plus size={15} /> Add specification</button>
+          </section>
+
+          <section className="card p-6">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <h2 className="font-head font-bold text-navy-900">Variants</h2>
+                <p className="mt-0.5 text-xs text-slatey">Colors, sizes, or other options. Each variant can have its own image, stock, and price adjustment.</p>
+              </div>
+              <button onClick={addVariant} className="btn-outline shrink-0 py-2 text-xs"><Plus size={14} /> Add variant</button>
+            </div>
+
+            {(!p.variants || p.variants.length === 0) ? (
+              <p className="rounded-xl border border-dashed border-navy-100 py-6 text-center text-sm text-slatey">No variants yet. Click "Add variant" to add colors or other options.</p>
+            ) : (
+              <div className="space-y-3">
+                {p.variants.map((v, i) => (
+                  <div key={v.id} className="flex flex-wrap items-start gap-3 rounded-xl border border-navy-50 bg-paper p-3 sm:flex-nowrap">
+                    {/* Image well */}
+                    <div className="group relative h-24 w-24 shrink-0 overflow-hidden rounded-lg border border-navy-100 bg-white">
+                      {v.image ? (
+                        <>
+                          <img src={v.image} alt="" className="h-full w-full object-contain p-1" />
+                          <label className="absolute inset-0 grid cursor-pointer place-items-center bg-navy/60 text-xs font-bold text-white opacity-0 transition group-hover:opacity-100">
+                            Replace
+                            <input type="file" accept="image/*" className="hidden" onChange={(e) => setVariantImage(i, e.target.files?.[0])} />
+                          </label>
+                          <button onClick={() => updateVariant(i, { image: undefined })} className="absolute right-1 top-1 grid h-5 w-5 place-items-center rounded-full bg-white text-red-500 shadow"><X size={11} /></button>
+                        </>
+                      ) : (
+                        <label className="grid h-full w-full cursor-pointer place-items-center text-slatey hover:bg-navy-50 hover:text-navy">
+                          <Upload size={18} />
+                          <span className="mt-1 text-[10px] font-semibold">Upload</span>
+                          <input type="file" accept="image/*" className="hidden" onChange={(e) => setVariantImage(i, e.target.files?.[0])} />
+                        </label>
+                      )}
+                    </div>
+
+                    {/* Fields */}
+                    <div className="grid flex-1 grid-cols-2 gap-2 sm:grid-cols-[1fr_110px_90px]">
+                      <div className="col-span-2 sm:col-span-1">
+                        <label className="label text-[11px]">Name</label>
+                        <input className="input" value={v.name} onChange={(e) => updateVariant(i, { name: e.target.value })} placeholder="Red" />
+                      </div>
+                      <div>
+                        <label className="label text-[11px]">Price +/- EGP</label>
+                        <input type="number" className="input" value={v.priceDelta} onChange={(e) => updateVariant(i, { priceDelta: +e.target.value })} />
+                      </div>
+                      <div>
+                        <label className="label text-[11px]">Stock</label>
+                        <input type="number" className="input" value={v.stock} onChange={(e) => updateVariant(i, { stock: +e.target.value })} />
+                      </div>
+                    </div>
+
+                    <button onClick={() => removeVariant(i)} className="mt-6 grid h-9 w-9 shrink-0 place-items-center rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600" aria-label="Remove variant"><Trash2 size={16} /></button>
+                  </div>
+                ))}
+              </div>
+            )}
           </section>
         </div>
 

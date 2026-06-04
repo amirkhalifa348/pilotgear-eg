@@ -13,6 +13,7 @@ import Messages from './pages/Messages'
 import Inventory from './pages/Inventory'
 import PageBuilder from './pages/PageBuilder'
 import Settings from './pages/Settings'
+import SalesLog from './pages/SalesLog'
 
 export default function AdminApp() {
   const [authed, setAuthed] = useState(isAdminAuthed())
@@ -30,6 +31,7 @@ export default function AdminApp() {
         <Route path="messages" element={<Messages />} />
         <Route path="inventory" element={<Inventory />} />
         <Route path="pages" element={<PageBuilder />} />
+        <Route path="sales" element={<SalesLog />} />
         <Route path="settings" element={<Settings />} />
         <Route path="*" element={<Navigate to="/admin" replace />} />
       </Route>

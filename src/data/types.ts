@@ -135,6 +135,25 @@ export interface StoreSettings {
   ntfyTopic: string
 }
 
+export type SaleChannel = 'whatsapp' | 'instagram' | 'phone' | 'in_person' | 'other'
+
+export interface SaleLogItem {
+  productId: string
+  title: string
+  qty: number
+  price: number
+}
+
+export interface SaleLog {
+  id: string
+  createdAt: number
+  channel: SaleChannel
+  customerName?: string
+  items: SaleLogItem[]
+  total: number
+  notes?: string
+}
+
 export interface StoreData {
   version: number
   products: Product[]
@@ -143,4 +162,5 @@ export interface StoreData {
   events: AnalyticsEvent[]
   homepage: PageBlock[]
   settings: StoreSettings
+  saleLogs: SaleLog[]
 }

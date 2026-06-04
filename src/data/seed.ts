@@ -509,5 +509,6 @@ export function buildSeed(): StoreData {
     events: [],
     homepage: seedHomepage,
     settings: seedSettings,
+    saleLogs: [],
   }
 }

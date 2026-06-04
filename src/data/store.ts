@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import type { AnalyticsEvent, CartItem, Order, Product, StoreData } from './types'
+import type { AnalyticsEvent, CartItem, Order, Product, SaleLog, StoreData } from './types'
 import { buildSeed } from './seed'
 import { STORE_ID, supabase } from './supabase'
 
@@ -309,6 +309,22 @@ export function track(e: Omit<AnalyticsEvent, 'id' | 'ts'>) {
   data = { ...data, events: [...data.events, evt].slice(-5000) }
   try { localStorage.setItem(KEY, JSON.stringify(data)) } catch {}
   listeners.forEach((l) => l())
+}
+
+/* ----------------------------- sales log ----------------------------- */
+export function addSaleLog(log: Omit<SaleLog, 'id' | 'createdAt'>) {
+  const full: SaleLog = { ...log, id: uid('sale'), createdAt: Date.now() }
+  setData((d) => {
+    d.saleLogs = [full, ...(d.saleLogs ?? [])]
+    return d
+  })
+}
+
+export function deleteSaleLog(id: string) {
+  setData((d) => {
+    d.saleLogs = (d.saleLogs ?? []).filter((s) => s.id !== id)
+    return d
+  })
 }
 
 /* ----------------------------- messages ----------------------------- */
