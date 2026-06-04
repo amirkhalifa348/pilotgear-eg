@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, NavLink, Outlet } from 'react-router-dom'
-import { BarChart3, Boxes, ClipboardList, ExternalLink, LayoutDashboard, LayoutTemplate, LogOut, Mail, Menu, Package, Settings as SettingsIcon, ShoppingCart, Sparkles, Tags, X } from 'lucide-react'
-import { adminLogout, useStore } from '../data/store'
+import { BarChart3, Boxes, Check, ClipboardList, Cloud, ExternalLink, LayoutDashboard, LayoutTemplate, LogOut, Mail, Menu, Package, Settings as SettingsIcon, ShoppingCart, Sparkles, Tags, X } from 'lucide-react'
+import { adminLogout, saveAll, useStore } from '../data/store'
 import { supabase } from '../data/supabase'
 
 const nav = [
@@ -22,6 +22,17 @@ export default function AdminLayout({ onLogout }: { onLogout: () => void }) {
   const pending = orders.filter((o) => o.status === 'pending').length
   const [open, setOpen] = useState(false)
   const [unreadMsgs, setUnreadMsgs] = useState(0)
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  async function handleSaveAll() {
+    if (saveState === 'saving') return
+    setSaveState('saving')
+    const ok = await saveAll()
+    setSaveState(ok ? 'saved' : 'error')
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(() => setSaveState('idle'), ok ? 2500 : 4000)
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -100,6 +111,35 @@ export default function AdminLayout({ onLogout }: { onLogout: () => void }) {
           <div className="flex items-center gap-2 text-navy">
             <BarChart3 size={18} className="text-gold-500" />
             <span className="font-head font-bold">PilotGear EG Admin</span>
+          </div>
+          <div className="ml-auto">
+            <button
+              onClick={handleSaveAll}
+              disabled={saveState === 'saving'}
+              className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                saveState === 'saved'
+                  ? 'bg-green-50 text-green-600'
+                  : saveState === 'error'
+                  ? 'bg-red-50 text-red-500'
+                  : 'bg-navy text-white hover:bg-navy-deep disabled:opacity-60'
+              }`}
+            >
+              {saveState === 'saving' && (
+                <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" />
+                </svg>
+              )}
+              {saveState === 'saved'   && <Check size={15} />}
+              {saveState === 'error'   && <X size={15} />}
+              {saveState === 'idle'    && <Cloud size={15} />}
+              <span className="hidden sm:inline">
+                {saveState === 'saving' ? 'Saving…'    :
+                 saveState === 'saved'  ? 'Saved!'     :
+                 saveState === 'error'  ? 'Save failed' :
+                 'Save All'}
+              </span>
+            </button>
           </div>
         </header>
         <main className="p-5 lg:p-8">

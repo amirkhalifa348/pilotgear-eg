@@ -66,22 +66,31 @@ function syncedPayload(d: StoreData): SyncedData {
   return rest
 }
 
-async function pushToSupabase() {
-  if (syncing) { pendingSync = true; return }
+async function pushToSupabase(): Promise<boolean> {
+  if (syncing) { pendingSync = true; return false }
   syncing = true
   const ts = new Date().toISOString()
   try {
     const payload = syncedPayload(data)
-    await supabase
+    const { error } = await supabase
       .from('store_data')
       .upsert({ id: STORE_ID, data: payload, updated_at: ts })
+    if (error) throw error
     lastPushedAt = ts
+    return true
   } catch (e) {
     console.warn('[supabase] store_data push failed:', e)
+    return false
   } finally {
     syncing = false
     if (pendingSync) { pendingSync = false; queueWrite() }
   }
+}
+
+/** Force an immediate sync to Supabase — cancels the debounce timer first. */
+export async function saveAll(): Promise<boolean> {
+  if (writeTimer) { clearTimeout(writeTimer); writeTimer = null }
+  return pushToSupabase()
 }
 
 function queueWrite() {
