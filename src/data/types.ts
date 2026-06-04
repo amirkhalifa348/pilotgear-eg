@@ -141,7 +141,8 @@ export interface SaleLogItem {
   productId: string
   title: string
   qty: number
-  price: number
+  price: number  // sale price per unit
+  cost: number   // cost price per unit at time of sale (for profit calc)
 }
 
 export interface SaleLog {
