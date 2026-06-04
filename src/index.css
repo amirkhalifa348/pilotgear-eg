@@ -1,0 +1,44 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --navy: #0E3A5C;
+    --gold: #EBB63F;
+  }
+  html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+  body {
+    @apply font-body text-navy-900 bg-white antialiased;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+  h1, h2, h3, h4, h5 { @apply font-head; }
+  ::selection { background: var(--gold); color: var(--navy); }
+}
+
+@layer components {
+  .container-px { @apply mx-auto w-full max-w-7xl px-5 sm:px-8; }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-full px-6 py-3 text-sm font-semibold tracking-wide transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none;
+  }
+  .btn-primary { @apply btn bg-navy text-white hover:bg-navy-700 shadow-card hover:shadow-lift; }
+  .btn-gold { @apply btn bg-gold text-navy-deep hover:bg-gold-400 shadow-card; }
+  .btn-outline { @apply btn border border-navy/20 text-navy hover:border-navy hover:bg-navy hover:text-white; }
+  .btn-ghost { @apply btn text-navy hover:bg-navy-50; }
+  .chip { @apply inline-flex items-center gap-1.5 rounded-full bg-navy-50 px-3 py-1 text-xs font-semibold text-navy-600; }
+  .input {
+    @apply w-full rounded-xl border border-navy-100 bg-white px-4 py-3 text-sm text-navy-900 placeholder:text-slatey/80 transition-shadow focus:border-navy-300 focus:outline-none focus:ring-4 focus:ring-navy-50;
+  }
+  .label { @apply mb-1.5 block text-xs font-semibold uppercase tracking-wide text-navy-600; }
+  .card { @apply rounded-2xl border border-navy-50 bg-white shadow-card; }
+  .link-underline { @apply relative after:absolute after:-bottom-0.5 after:left-0 after:h-0.5 after:w-0 after:bg-gold after:transition-all hover:after:w-full; }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar { width: 11px; height: 11px; }
+::-webkit-scrollbar-track { background: #eef4f9; }
+::-webkit-scrollbar-thumb { background: #a9c4dd; border-radius: 99px; border: 3px solid #eef4f9; }
+::-webkit-scrollbar-thumb:hover { background: #6f9bc2; }
+
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
