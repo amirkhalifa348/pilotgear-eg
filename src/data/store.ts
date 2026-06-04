@@ -6,6 +6,8 @@ import { STORE_ID, supabase } from './supabase'
 const KEY = 'pilotgear:data:v9'
 const CART_KEY = 'pilotgear:cart:v9'
 const ADMIN_KEY = 'pilotgear:admin-auth'
+// Tracks when this browser last wrote data locally — shared across tabs via localStorage
+const MODIFIED_AT_KEY = 'pilotgear:modified-at'
 
 /** Fields synced to Supabase store_data row (not orders/events) */
 type SyncedData = Omit<StoreData, 'orders' | 'events'>
@@ -13,6 +15,11 @@ type SyncedData = Omit<StoreData, 'orders' | 'events'>
 /* ----------------------------- core store ----------------------------- */
 let data: StoreData = load()
 const listeners = new Set<() => void>()
+
+// Initialise from localStorage so a new tab inherits the last-write timestamp
+let localModifiedAt: number = parseInt(
+  (typeof localStorage !== 'undefined' && localStorage.getItem(MODIFIED_AT_KEY)) || '0',
+)
 
 function load(): StoreData {
   try {
@@ -25,7 +32,11 @@ function load(): StoreData {
 }
 
 function persist() {
-  try { localStorage.setItem(KEY, JSON.stringify(data)) } catch {}
+  localModifiedAt = Date.now()
+  try {
+    localStorage.setItem(KEY, JSON.stringify(data))
+    localStorage.setItem(MODIFIED_AT_KEY, String(localModifiedAt))
+  } catch {}
   listeners.forEach((l) => l())
 }
 
@@ -82,13 +93,20 @@ async function pullFromSupabase() {
   try {
     const { data: row, error } = await supabase
       .from('store_data')
-      .select('data')
+      .select('data, updated_at')
       .eq('id', STORE_ID)
       .maybeSingle()
     if (error) { console.warn('[supabase] store_data pull error', error.message); return }
     if (!row) {
       // First run on this Supabase project: seed it from local
       await pushToSupabase()
+      return
+    }
+    // If the local data is newer than what Supabase has (e.g. a push is still
+    // in-flight or failed), don't overwrite — push local data up instead.
+    const remoteTs = row.updated_at ? new Date(row.updated_at).getTime() : 0
+    if (localModifiedAt > remoteTs) {
+      queueWrite()
       return
     }
     applyRemote(row.data as SyncedData)
