@@ -52,7 +52,8 @@ function applyRemote(remote: SyncedData) {
 let syncing = false
 let pendingSync = false
 let writeTimer: ReturnType<typeof setTimeout> | null = null
-let suppressNextWrite = false // when we just received remote update, don't echo
+// Track our last push version so realtime echoes of our own writes are ignored
+let lastPushedAt = ''
 
 function syncedPayload(d: StoreData): SyncedData {
   const { orders, events, ...rest } = d
@@ -62,11 +63,13 @@ function syncedPayload(d: StoreData): SyncedData {
 async function pushToSupabase() {
   if (syncing) { pendingSync = true; return }
   syncing = true
+  const ts = new Date().toISOString()
   try {
     const payload = syncedPayload(data)
     await supabase
       .from('store_data')
-      .upsert({ id: STORE_ID, data: payload, updated_at: new Date().toISOString() })
+      .upsert({ id: STORE_ID, data: payload, updated_at: ts })
+    lastPushedAt = ts
   } catch (e) {
     console.warn('[supabase] store_data push failed:', e)
   } finally {
@@ -76,9 +79,8 @@ async function pushToSupabase() {
 }
 
 function queueWrite() {
-  if (suppressNextWrite) { suppressNextWrite = false; return }
   if (writeTimer) clearTimeout(writeTimer)
-  writeTimer = setTimeout(pushToSupabase, 350)
+  writeTimer = setTimeout(pushToSupabase, 200)
 }
 
 async function pullFromSupabase() {
@@ -94,7 +96,6 @@ async function pullFromSupabase() {
       await pushToSupabase()
       return
     }
-    suppressNextWrite = true
     applyRemote(row.data as SyncedData)
   } catch (e) {
     console.warn('[supabase] pull failed (offline?)', e)
@@ -127,11 +128,10 @@ if (typeof window !== 'undefined') {
   supabase
     .channel('store_data-changes')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'store_data' }, (payload) => {
-      const next = (payload.new as any)?.data
-      if (next) {
-        suppressNextWrite = true
-        applyRemote(next as SyncedData)
-      }
+      const row = payload.new as any
+      // Ignore echo of our own push (same timestamp we just wrote)
+      if (row?.updated_at && row.updated_at === lastPushedAt) return
+      if (row?.data) applyRemote(row.data as SyncedData)
     })
     .subscribe()
 
@@ -154,6 +154,15 @@ if (typeof window !== 'undefined') {
       listeners.forEach((l) => l())
     })
     .subscribe()
+
+  // Vite HMR: tear down channels before this module is replaced so the next
+  // hot instance can re-subscribe cleanly without the "after subscribe()" error.
+  if (import.meta.hot) {
+    import.meta.hot.dispose(() => {
+      supabase.removeAllChannels()
+      if (writeTimer) clearTimeout(writeTimer)
+    })
+  }
 }
 
 /** Replace whole store (admin save). Persists locally + pushes to Supabase. */
@@ -212,6 +221,21 @@ export function setStock(productId: string, value: number) {
   setData((d) => {
     const p = d.products.find((x) => x.id === productId)
     if (p) p.stock = Math.max(0, value)
+    return d
+  })
+}
+
+export type BulkField = 'stock' | 'price' | 'cost' | 'compareAtPrice'
+
+export function bulkUpdateProducts(ids: string[], field: BulkField, value: number) {
+  setData((d) => {
+    for (const p of d.products) {
+      if (!ids.includes(p.id)) continue
+      if (field === 'stock') p.stock = Math.max(0, value)
+      else if (field === 'price') p.price = Math.max(0, value)
+      else if (field === 'cost') p.cost = Math.max(0, value)
+      else if (field === 'compareAtPrice') p.compareAtPrice = value > 0 ? value : undefined
+    }
     return d
   })
 }
