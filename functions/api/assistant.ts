@@ -1,20 +1,18 @@
 // Cloudflare Pages Function: /api/assistant
-// Backend for the admin AI assistant, using Google Gemini (free tier).
-// The Gemini API key lives ONLY here, as a Cloudflare secret env var
-// (Pages project → Settings → Environment variables → GEMINI_API_KEY).
+// Backend for the admin AI assistant, using Groq (free tier).
+// The Groq API key lives ONLY here, as a Cloudflare secret env var
+// (Pages project → Settings → Environment variables → GROQ_API_KEY).
 //
 // The client (src/admin/pages/Assistant.tsx) speaks the Anthropic message/block
-// shape. To avoid touching the React side, this function translates that shape
-// to/from Gemini's wire format:
-//   - client sends { messages, context } in Anthropic blocks
-//   - we return { content: [...anthropic-blocks], stop_reason }
+// shape. We translate that to/from Groq's OpenAI-compatible chat completions
+// format so the React side stays backend-agnostic.
 //
-//   messages: the running conversation (user/assistant turns + tool results)
-//   context:  a fresh snapshot of live store data (inventory, analytics, orders)
+//   client → { messages, context }   (Anthropic blocks)
+//   we return → { content: [...Anthropic-blocks], stop_reason }
 
 interface Env {
-  GEMINI_API_KEY: string
-  GEMINI_MODEL?: string
+  GROQ_API_KEY: string
+  GROQ_MODEL?: string
 }
 
 /* ---- Anthropic-shaped blocks (what the client sends/expects) ---- */
@@ -25,12 +23,12 @@ type Block =
   | { type: 'tool_result'; tool_use_id: string; content: any; is_error?: boolean }
 type ApiMessage = { role: 'user' | 'assistant'; content: string | Block[] }
 
-/* ---- Gemini-shaped types ---- */
-type GeminiPart =
-  | { text: string }
-  | { functionCall: { name: string; args: any } }
-  | { functionResponse: { name: string; response: any } }
-type GeminiContent = { role: 'user' | 'model'; parts: GeminiPart[] }
+/* ---- OpenAI/Groq-shaped types ---- */
+type OAIMessage =
+  | { role: 'system' | 'user'; content: string }
+  | { role: 'assistant'; content: string | null; tool_calls?: OAIToolCall[] }
+  | { role: 'tool'; tool_call_id: string; content: string }
+type OAIToolCall = { id: string; type: 'function'; function: { name: string; arguments: string } }
 
 // ---- Static brand system prompt (no dates / volatile data here) ----
 const BRAND_SYSTEM = `You are the AI operations assistant built into the admin dashboard of PilotGear EG, an Egyptian e-commerce brand selling aviation-themed accessories (mainly keychains) plus a few home & desk pieces. You speak directly to the store owner (Amir) inside his private admin panel.
@@ -66,39 +64,38 @@ When asked for advice, ground every recommendation in the ACTUAL numbers in the 
 # Style
 Be concise and skimmable. Use short paragraphs and tight bullet lists. Lead with the answer or the action, then the reasoning. Do not narrate routine steps. When you propose a data change, keep the explanation to a sentence or two; the confirmation card already shows the exact change.`
 
-// ---- Tool schema in Gemini format (uppercase types, no additionalProperties) ----
-const GEMINI_TOOLS = [
+// ---- Tool schema in OpenAI/Groq format ----
+const OAI_TOOLS = [
   {
-    function_declarations: [
-      {
-        name: 'apply_inventory_changes',
-        description:
-          'Apply one or more changes to product fields in the live store. Each change targets a single product by its product_id (from the PRODUCTS list in the context) and sets exactly one field to a numeric value. Supports both bulk edits (many products in one call) and different values per product. Money fields (price, cost, compareAtPrice) are in EGP; stock is a unit count. The store owner confirms before changes apply.',
-        parameters: {
-          type: 'OBJECT',
-          properties: {
-            changes: {
-              type: 'ARRAY',
-              description: 'The list of field changes to apply.',
-              items: {
-                type: 'OBJECT',
-                properties: {
-                  product_id: { type: 'STRING', description: 'Exact product id from the PRODUCTS list' },
-                  field: {
-                    type: 'STRING',
-                    enum: ['stock', 'price', 'cost', 'compareAtPrice'],
-                    description: 'Which field to set',
-                  },
-                  value: { type: 'NUMBER', description: 'New value (EGP for money fields, units for stock)' },
+    type: 'function',
+    function: {
+      name: 'apply_inventory_changes',
+      description:
+        'Apply one or more changes to product fields in the live store. Each change targets a single product by its product_id (from the PRODUCTS list in the context) and sets exactly one field to a numeric value. Supports both bulk edits (many products in one call) and different values per product. Money fields (price, cost, compareAtPrice) are in EGP; stock is a unit count. The store owner confirms before changes apply.',
+      parameters: {
+        type: 'object',
+        properties: {
+          changes: {
+            type: 'array',
+            description: 'The list of field changes to apply.',
+            items: {
+              type: 'object',
+              properties: {
+                product_id: { type: 'string', description: 'Exact product id from the PRODUCTS list' },
+                field: {
+                  type: 'string',
+                  enum: ['stock', 'price', 'cost', 'compareAtPrice'],
+                  description: 'Which field to set',
                 },
-                required: ['product_id', 'field', 'value'],
+                value: { type: 'number', description: 'New value (EGP for money fields, units for stock)' },
               },
+              required: ['product_id', 'field', 'value'],
             },
           },
-          required: ['changes'],
         },
+        required: ['changes'],
       },
-    ],
+    },
   },
 ]
 
@@ -108,86 +105,87 @@ const json = (data: unknown, status = 200) =>
     headers: { 'content-type': 'application/json' },
   })
 
-/* ---- Anthropic messages -> Gemini contents ---- */
-function toGeminiContents(messages: ApiMessage[]): GeminiContent[] {
-  // Map tool_use ids -> function name so we can name tool_result responses.
-  const idToName = new Map<string, string>()
+/* ---- Anthropic messages -> OpenAI/Groq messages ---- */
+function toOpenAIMessages(messages: ApiMessage[]): OAIMessage[] {
+  const out: OAIMessage[] = []
   for (const m of messages) {
-    if (Array.isArray(m.content)) {
-      for (const b of m.content) {
-        if (b.type === 'tool_use') idToName.set(b.id, b.name)
-      }
-    }
-  }
-
-  const out: GeminiContent[] = []
-  for (const m of messages) {
-    const role: 'user' | 'model' = m.role === 'assistant' ? 'model' : 'user'
-
     if (typeof m.content === 'string') {
-      if (m.content.trim()) out.push({ role, parts: [{ text: m.content }] })
+      if (m.content.trim()) out.push({ role: m.role, content: m.content } as OAIMessage)
       continue
     }
 
-    const parts: GeminiPart[] = []
-    for (const b of m.content) {
-      if (b.type === 'text') {
-        if (b.text.trim()) parts.push({ text: b.text })
-      } else if (b.type === 'tool_use') {
-        parts.push({ functionCall: { name: b.name, args: b.input ?? {} } })
-      } else if (b.type === 'tool_result') {
-        const name = idToName.get(b.tool_use_id) || 'apply_inventory_changes'
-        const resultText = typeof b.content === 'string' ? b.content : JSON.stringify(b.content)
-        parts.push({ functionResponse: { name, response: { result: resultText } } })
+    if (m.role === 'assistant') {
+      let text = ''
+      const toolCalls: OAIToolCall[] = []
+      for (const b of m.content) {
+        if (b.type === 'text') text += b.text
+        else if (b.type === 'tool_use') {
+          toolCalls.push({
+            id: b.id,
+            type: 'function',
+            function: { name: b.name, arguments: JSON.stringify(b.input ?? {}) },
+          })
+        }
+        // thinking blocks dropped
       }
-      // thinking blocks are dropped
+      const asst: OAIMessage = { role: 'assistant', content: text || null }
+      if (toolCalls.length) (asst as any).tool_calls = toolCalls
+      out.push(asst)
+    } else {
+      // user role: tool_result blocks become role:"tool" messages; text becomes a user message
+      let userText = ''
+      for (const b of m.content) {
+        if (b.type === 'text') userText += b.text
+        else if (b.type === 'tool_result') {
+          const content = typeof b.content === 'string' ? b.content : JSON.stringify(b.content)
+          out.push({ role: 'tool', tool_call_id: b.tool_use_id, content })
+        }
+      }
+      if (userText.trim()) out.push({ role: 'user', content: userText })
     }
-    if (parts.length) out.push({ role, parts })
   }
   return out
 }
 
-/* ---- Gemini candidate -> Anthropic blocks ---- */
-function fromGeminiCandidate(candidate: any): { content: Block[]; stop_reason: string } {
-  const parts: any[] = candidate?.content?.parts || []
+/* ---- OpenAI choice -> Anthropic blocks ---- */
+function fromOpenAIChoice(choice: any): { content: Block[]; stop_reason: string } {
+  const msg = choice?.message || {}
   const content: Block[] = []
-  let hasToolUse = false
-  let counter = 0
 
-  for (const p of parts) {
-    if (p.functionCall) {
-      hasToolUse = true
-      content.push({
-        type: 'tool_use',
-        id: `call_${Date.now()}_${counter++}`,
-        name: p.functionCall.name,
-        input: p.functionCall.args ?? {},
-      })
-    } else if (typeof p.text === 'string' && p.text.length) {
-      content.push({ type: 'text', text: p.text })
-    }
+  if (typeof msg.content === 'string' && msg.content.trim()) {
+    content.push({ type: 'text', text: msg.content })
   }
 
-  if (content.length === 0) {
-    const reason = candidate?.finishReason
+  const toolCalls: any[] = Array.isArray(msg.tool_calls) ? msg.tool_calls : []
+  for (const tc of toolCalls) {
+    let input: any = {}
+    try {
+      input = JSON.parse(tc?.function?.arguments || '{}')
+    } catch {
+      input = { _raw: tc?.function?.arguments }
+    }
     content.push({
-      type: 'text',
-      text:
-        reason === 'SAFETY' || reason === 'PROHIBITED_CONTENT'
-          ? 'I could not answer that one. Try rephrasing, or ask something else about the store.'
-          : 'I did not get a response that time. Please try again.',
+      type: 'tool_use',
+      id: tc?.id || `call_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      name: tc?.function?.name || 'apply_inventory_changes',
+      input,
     })
   }
 
+  if (content.length === 0) {
+    content.push({ type: 'text', text: 'I did not get a response that time. Please try again.' })
+  }
+
+  const hasToolUse = content.some((b) => b.type === 'tool_use')
   return { content, stop_reason: hasToolUse ? 'tool_use' : 'end_turn' }
 }
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
   const { request, env } = context
 
-  if (!env.GEMINI_API_KEY) {
+  if (!env.GROQ_API_KEY) {
     return json(
-      { error: 'The AI assistant is not configured. Add GEMINI_API_KEY as a secret in the Cloudflare Pages project settings.' },
+      { error: 'The AI assistant is not configured. Add GROQ_API_KEY as a secret in the Cloudflare Pages project settings.' },
       500,
     )
   }
@@ -209,22 +207,30 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       ? body.context
       : 'No live store data was provided for this request.'
 
-  const model = env.GEMINI_MODEL || 'gemini-2.0-flash'
-  const payload = {
-    system_instruction: {
-      parts: [{ text: `${BRAND_SYSTEM}\n\n# LIVE STORE DATA (current snapshot)\n${liveContext}` }],
-    },
-    contents: toGeminiContents(messages as ApiMessage[]),
-    tools: GEMINI_TOOLS,
-  }
+  const model = env.GROQ_MODEL || 'llama-3.3-70b-versatile'
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${env.GEMINI_API_KEY}`
+  const oaiMessages: OAIMessage[] = [
+    { role: 'system', content: `${BRAND_SYSTEM}\n\n# LIVE STORE DATA (current snapshot)\n${liveContext}` },
+    ...toOpenAIMessages(messages as ApiMessage[]),
+  ]
+
+  const payload = {
+    model,
+    messages: oaiMessages,
+    tools: OAI_TOOLS,
+    tool_choice: 'auto',
+    temperature: 0.7,
+    max_tokens: 4096,
+  }
 
   let upstream: Response
   try {
-    upstream = await fetch(url, {
+    upstream = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        'authorization': `Bearer ${env.GROQ_API_KEY}`,
+        'content-type': 'application/json',
+      },
       body: JSON.stringify(payload),
     })
   } catch {
@@ -239,10 +245,10 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     return json({ error: message }, upstream.status === 200 ? 502 : upstream.status)
   }
 
-  const candidate = data?.candidates?.[0]
-  if (!candidate) {
+  const choice = data?.choices?.[0]
+  if (!choice) {
     return json({ error: 'The assistant returned no response. Please try again.' }, 502)
   }
 
-  return json(fromGeminiCandidate(candidate))
+  return json(fromOpenAIChoice(choice))
 }
