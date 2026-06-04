@@ -19,8 +19,10 @@ function channelLabel(c: SaleChannel) {
 const EMPTY_ITEM: SaleLogItem = { productId: '', title: '', qty: 1, price: 0 }
 
 export default function SalesLog() {
-  const products = useStore((d) => d.products.filter((p) => p.active))
-  const saleLogs = useStore((d) => d.saleLogs ?? [])
+  const allProducts = useStore((d) => d.products)
+  const rawLogs = useStore((d) => d.saleLogs)
+  const products = useMemo(() => allProducts.filter((p) => p.active), [allProducts])
+  const saleLogs = useMemo(() => rawLogs ?? [], [rawLogs])
   const [open, setOpen] = useState(false)
 
   // form state
