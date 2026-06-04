@@ -11,13 +11,16 @@
   body {
     @apply font-body text-navy-900 bg-white antialiased;
     font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    overflow-x: hidden;
   }
   h1, h2, h3, h4, h5 { @apply font-head; }
   ::selection { background: var(--gold); color: var(--navy); }
+  /* Larger tap targets & no tap highlight flash on mobile */
+  button, a { -webkit-tap-highlight-color: transparent; }
 }
 
 @layer components {
-  .container-px { @apply mx-auto w-full max-w-7xl px-5 sm:px-8; }
+  .container-px { @apply mx-auto w-full max-w-7xl px-4 sm:px-8; }
   .btn {
     @apply inline-flex items-center justify-center gap-2 rounded-full px-6 py-3 text-sm font-semibold tracking-wide transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none;
   }
@@ -42,3 +45,18 @@
 
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Prevent iOS auto-zoom on input focus (font must be >=16px) */
+@media (max-width: 640px) {
+  .input, input, select, textarea { font-size: 16px; }
+}
+
+/* Respect reduced-motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

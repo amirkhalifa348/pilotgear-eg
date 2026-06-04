@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { Instagram, Mail, Menu, ShoppingBag, X } from 'lucide-react'
+import { ChevronRight, Instagram, Mail, Menu, ShoppingBag, X } from 'lucide-react'
 import { useCart, useStore } from '../../data/store'
 
 function cartCount(cart: { qty: number }[]) {
@@ -58,11 +58,19 @@ function CartIcon() {
 
 function Header() {
   const [open, setOpen] = useState(false)
+  const [closing, setClosing] = useState(false)
+
+  function openDrawer() { setClosing(false); setOpen(true) }
+  function closeDrawer() {
+    setClosing(true)
+    setTimeout(() => { setOpen(false); setClosing(false) }, 320)
+  }
+
   return (
     <>
     <header className="sticky top-0 z-40 border-b border-navy-50 bg-white/90 backdrop-blur-md">
       <div className="container-px flex h-[72px] items-center justify-between gap-4 lg:h-24">
-        <button className="lg:hidden -ml-1 grid h-10 w-10 place-items-center rounded-full text-navy hover:bg-navy-50" onClick={() => setOpen(true)} aria-label="Open menu">
+        <button className="lg:hidden -ml-1 grid h-10 w-10 place-items-center rounded-full text-navy transition active:scale-90 hover:bg-navy-50" onClick={openDrawer} aria-label="Open menu">
           <Menu />
         </button>
         <Link to="/" className="flex items-center">
@@ -89,27 +97,36 @@ function Header() {
       {/* Mobile drawer */}
       {open && (
         <div className="fixed inset-0 z-[60] lg:hidden">
-          <div className="absolute inset-0 bg-navy-deep/50 animate-fade-in" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 top-0 h-full w-[82%] max-w-xs bg-white p-5 shadow-lift animate-fade-up">
-            <div className="flex items-center justify-between">
+          <div
+            className={`absolute inset-0 bg-navy-deep/50 backdrop-blur-sm animate-overlay-in ${closing ? '[animation-direction:reverse]' : ''}`}
+            onClick={closeDrawer}
+          />
+          <div className={`absolute left-0 top-0 flex h-full w-[84%] max-w-xs flex-col bg-white shadow-lift ${closing ? 'animate-slide-in-left [animation-direction:reverse]' : 'animate-slide-in-left'}`}>
+            <div className="flex items-center justify-between border-b border-navy-50 px-5 py-4">
               <img src="/brand/logo.png" alt="PilotGear EG" className="h-9" />
-              <button onClick={() => setOpen(false)} className="grid h-10 w-10 place-items-center rounded-full hover:bg-navy-50" aria-label="Close menu"><X /></button>
+              <button onClick={closeDrawer} className="grid h-10 w-10 place-items-center rounded-full text-navy transition active:scale-90 hover:bg-navy-50" aria-label="Close menu"><X /></button>
             </div>
-            <nav className="mt-6 flex flex-col">
-              {navLinks.map((l) => (
+            <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-4">
+              {navLinks.map((l, i) => (
                 <NavLink
                   key={l.to}
                   to={l.to}
                   end={l.to === '/'}
-                  onClick={() => setOpen(false)}
+                  onClick={closeDrawer}
+                  style={{ animationDelay: closing ? '0ms' : `${80 + i * 45}ms` }}
                   className={({ isActive }) =>
-                    `rounded-xl px-4 py-3 text-base font-semibold transition ${isActive ? 'bg-navy-50 text-navy' : 'text-navy-700 hover:bg-navy-50'}`
+                    `${closing ? '' : 'animate-drawer-item'} flex items-center justify-between rounded-xl px-4 py-3.5 text-base font-semibold transition active:scale-[0.98] ${isActive ? 'bg-navy text-white' : 'text-navy-700 hover:bg-navy-50'}`
                   }
                 >
                   {l.label}
+                  <ChevronRight size={18} className="opacity-40" />
                 </NavLink>
               ))}
             </nav>
+            <div className="border-t border-navy-50 p-5">
+              <Link to="/shop" onClick={closeDrawer} className="btn-gold w-full justify-center">Shop all gear</Link>
+              <p className="mt-4 text-center text-xs text-slatey">💳 Cash on delivery across Egypt 🇪🇬</p>
+            </div>
           </div>
         </div>
       )}

@@ -68,6 +68,22 @@ export default {
           '0%':   { strokeDashoffset: '30' },
           '100%': { strokeDashoffset: '0'  },
         },
+        'slide-in-left': {
+          '0%':   { opacity: '0', transform: 'translateX(-100%)' },
+          '100%': { opacity: '1', transform: 'translateX(0)'    },
+        },
+        'overlay-in': {
+          '0%':   { opacity: '0' },
+          '100%': { opacity: '1' },
+        },
+        'drawer-item': {
+          '0%':   { opacity: '0', transform: 'translateX(-14px)' },
+          '100%': { opacity: '1', transform: 'translateX(0)'     },
+        },
+        'pulse-glow': {
+          '0%,100%': { opacity: '0.45', transform: 'translate(-50%,-50%) scale(1)' },
+          '50%':     { opacity: '0.7',  transform: 'translate(-50%,-50%) scale(1.08)' },
+        },
       },
       animation: {
         'fade-up':     'fade-up 0.6s cubic-bezier(0.22,1,0.36,1) both',
@@ -78,6 +94,10 @@ export default {
         'btn-success': 'btn-success 0.35s cubic-bezier(0.22,1,0.36,1)',
         'fly-up':      'fly-up 0.7s cubic-bezier(0.22,1,0.36,1) forwards',
         'check-draw':  'check-draw 0.3s ease-out 0.1s forwards',
+        'slide-in-left': 'slide-in-left 0.38s cubic-bezier(0.22,1,0.36,1) both',
+        'overlay-in':    'overlay-in 0.3s ease both',
+        'drawer-item':   'drawer-item 0.4s cubic-bezier(0.22,1,0.36,1) both',
+        'pulse-glow':    'pulse-glow 7s ease-in-out infinite',
       },
     },
   },

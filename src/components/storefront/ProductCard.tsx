@@ -21,7 +21,7 @@ export default function ProductCard({ product }: { product: Product }) {
           src={product.images[0]}
           alt={product.title}
           loading="lazy"
-          className="h-full w-full object-contain p-6 transition-transform duration-500 group-hover:scale-105"
+          className="h-full w-full object-contain p-4 transition-transform duration-500 group-hover:scale-105 sm:p-6"
         />
         {product.images[1] && (
           <img
@@ -29,7 +29,7 @@ export default function ProductCard({ product }: { product: Product }) {
             alt=""
             aria-hidden
             loading="lazy"
-            className="absolute inset-0 h-full w-full object-contain p-6 opacity-0 transition-opacity duration-500 group-hover:opacity-100"
+            className="absolute inset-0 h-full w-full object-contain p-4 opacity-0 transition-opacity duration-500 group-hover:opacity-100 sm:p-6"
           />
         )}
       </Link>
