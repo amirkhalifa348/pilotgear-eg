@@ -125,7 +125,6 @@ function Header() {
             </nav>
             <div className="border-t border-navy-50 p-5">
               <Link to="/shop" onClick={closeDrawer} className="btn-gold w-full justify-center">Shop all gear</Link>
-              <p className="mt-4 text-center text-xs text-slatey">💳 Cash on delivery across Egypt 🇪🇬</p>
             </div>
           </div>
         </div>
@@ -173,13 +172,11 @@ function Footer() {
             <li><a href={`https://instagram.com/${s.instagram}`} target="_blank" rel="noreferrer" className="flex items-center gap-2 hover:text-white"><Instagram size={15} /> @{s.instagram}</a></li>
             <li className="flex items-center gap-2"><span className="text-base">🇪🇬</span> Delivering across Egypt</li>
           </ul>
-          <p className="mt-5 rounded-xl bg-white/10 px-4 py-3 text-xs text-white/80">💳 Cash on delivery available nationwide</p>
         </div>
       </div>
       <div className="border-t border-white/10">
         <div className="container-px flex flex-col items-center justify-between gap-3 py-5 text-xs text-white/50 sm:flex-row">
           <p>© {new Date().getFullYear()} PilotGear EG. All rights reserved.</p>
-          <button onClick={() => nav('/admin')} className="text-white/40 transition hover:text-gold">Store admin</button>
         </div>
       </div>
     </footer>

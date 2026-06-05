@@ -75,7 +75,6 @@ export default function Cart() {
           </dl>
           <Link to="/checkout" className="btn-primary mt-6 w-full py-3.5">Proceed to checkout <ArrowRight size={18} /></Link>
           <Link to="/shop" className="mt-3 block text-center text-sm font-semibold text-navy-600 hover:text-navy">Continue shopping</Link>
-          <p className="mt-4 text-center text-xs text-slatey">💳 Cash on delivery available</p>
         </aside>
       </div>
     </div>
