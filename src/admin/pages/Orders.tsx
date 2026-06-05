@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
-import { Phone, Search, X } from 'lucide-react'
-import { formatMoney, updateOrderStatus, useStore } from '../../data/store'
+import { AlertTriangle, Phone, Search, Trash2, X } from 'lucide-react'
+import { deleteOrder, formatMoney, updateOrderStatus, useStore } from '../../data/store'
 import type { Order, OrderStatus } from '../../data/types'
 import { PageHeader, StatusBadge } from '../ui'
 
@@ -11,6 +11,7 @@ export default function Orders() {
   const [q, setQ] = useState('')
   const [tab, setTab] = useState<OrderStatus | 'all'>('all')
   const [open, setOpen] = useState<Order | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
   const list = useMemo(() => {
     let l = orders
@@ -57,11 +58,11 @@ export default function Orders() {
       </div>
 
       {open && (
-        <div className="fixed inset-0 z-50 flex justify-end bg-black/40" onClick={() => setOpen(null)}>
+        <div className="fixed inset-0 z-50 flex justify-end bg-black/40" onClick={() => { setOpen(null); setConfirmDelete(false) }}>
           <div className="h-full w-full max-w-md overflow-y-auto bg-white p-6 shadow-lift animate-fade-in" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <div><h2 className="font-head text-xl font-extrabold text-navy-900">Order #{open.number}</h2><p className="text-sm text-slatey">{date(open.createdAt)}</p></div>
-              <button onClick={() => setOpen(null)} className="grid h-9 w-9 place-items-center rounded-full hover:bg-navy-50"><X /></button>
+              <button onClick={() => { setOpen(null); setConfirmDelete(false) }} className="grid h-9 w-9 place-items-center rounded-full hover:bg-navy-50"><X /></button>
             </div>
 
             <div className="mt-5">
@@ -97,6 +98,38 @@ export default function Orders() {
               <div className="flex justify-between border-t border-navy-50 pt-2 text-base font-bold"><dt className="text-navy-900">Total</dt><dd className="text-navy">{formatMoney(open.total)}</dd></div>
               <p className="pt-1 text-xs text-slatey">Payment: Cash on delivery</p>
             </dl>
+
+            <div className="mt-6 border-t border-navy-50 pt-5">
+              {!confirmDelete ? (
+                <button
+                  onClick={() => setConfirmDelete(true)}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-red-200 py-2.5 text-sm font-semibold text-red-500 transition hover:bg-red-50"
+                >
+                  <Trash2 size={15} /> Delete order
+                </button>
+              ) : (
+                <div className="rounded-xl border border-red-200 bg-red-50 p-4">
+                  <div className="flex items-start gap-2 text-sm text-red-700">
+                    <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+                    <p>This will permanently delete order <strong>#{open.number}</strong> and remove it from all analytics. This cannot be undone.</p>
+                  </div>
+                  <div className="mt-3 flex gap-2">
+                    <button
+                      onClick={() => { deleteOrder(open.id); setOpen(null); setConfirmDelete(false) }}
+                      className="flex-1 rounded-lg bg-red-500 py-2 text-sm font-bold text-white transition hover:bg-red-600"
+                    >
+                      Yes, delete
+                    </button>
+                    <button
+                      onClick={() => setConfirmDelete(false)}
+                      className="flex-1 rounded-lg border border-navy-50 py-2 text-sm font-semibold text-navy-700 transition hover:bg-navy-50"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

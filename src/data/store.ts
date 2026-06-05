@@ -360,6 +360,16 @@ export function updateOrderStatus(id: string, status: Order['status']) {
     .then(({ error }) => { if (error) console.warn('[supabase] order update failed:', error.message) })
 }
 
+export function deleteOrder(id: string) {
+  data = { ...data, orders: data.orders.filter((o) => o.id !== id) }
+  persist()
+  supabase
+    .from('orders')
+    .delete()
+    .eq('id', id)
+    .then(({ error }) => { if (error) console.warn('[supabase] order delete failed:', error.message) })
+}
+
 /* ----------------------------- analytics (local only) ----------------------------- */
 export function track(e: Omit<AnalyticsEvent, 'id' | 'ts'>) {
   const evt: AnalyticsEvent = { ...e, id: uid('ev'), ts: Date.now() }

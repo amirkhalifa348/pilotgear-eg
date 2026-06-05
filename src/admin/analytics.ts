@@ -30,7 +30,7 @@ export interface Metrics {
 
 export function computeMetrics(events: AnalyticsEvent[], orders: Order[], sinceTs: number): Metrics {
   const ev = events.filter((e) => e.ts >= sinceTs)
-  const ords = orders.filter((o) => o.createdAt >= sinceTs)
+  const ords = orders.filter((o) => o.createdAt >= sinceTs && o.status !== 'cancelled')
   const pageViews = ev.filter((e) => e.type === 'page_view').length
   const productViews = ev.filter((e) => e.type === 'product_view').length
   const addToCarts = ev.filter((e) => e.type === 'add_to_cart').length
@@ -57,7 +57,7 @@ export function computeMetrics(events: AnalyticsEvent[], orders: Order[], sinceT
 export function dailySeries(events: AnalyticsEvent[], orders: Order[], days: string[]) {
   return days.map((d) => {
     const views = events.filter((e) => e.type === 'page_view' && dayKey(e.ts) === d).length
-    const dayOrders = orders.filter((o) => dayKey(o.createdAt) === d)
+    const dayOrders = orders.filter((o) => dayKey(o.createdAt) === d && o.status !== 'cancelled')
     return {
       date: d.slice(5),
       views,
@@ -69,7 +69,7 @@ export function dailySeries(events: AnalyticsEvent[], orders: Order[], days: str
 
 export function topProducts(events: AnalyticsEvent[], orders: Order[], products: Product[], sinceTs: number) {
   const sold: Record<string, { qty: number; revenue: number }> = {}
-  for (const o of orders.filter((o) => o.createdAt >= sinceTs)) {
+  for (const o of orders.filter((o) => o.createdAt >= sinceTs && o.status !== 'cancelled')) {
     for (const it of o.items) {
       sold[it.productId] = sold[it.productId] || { qty: 0, revenue: 0 }
       sold[it.productId].qty += it.qty
