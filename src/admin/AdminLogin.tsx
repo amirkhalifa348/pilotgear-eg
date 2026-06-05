@@ -28,7 +28,6 @@ export default function AdminLogin({ onSuccess }: { onSuccess: () => void }) {
           />
           {err && <p className="mt-2 text-sm text-red-500">Incorrect password. Try again.</p>}
           <button className="btn-primary mt-5 w-full py-3">Sign in</button>
-          <p className="mt-4 text-center text-xs text-slatey">Default password: <code className="rounded bg-navy-50 px-1.5 py-0.5 font-semibold text-navy">pilotgear</code> · change it in Settings</p>
         </form>
         <Link to="/" className="mt-5 block text-center text-sm font-medium text-white/60 hover:text-gold"><Plane size={13} className="mr-1 inline" /> Back to store</Link>
       </div>
