@@ -77,6 +77,10 @@ async function pushToSupabase(): Promise<boolean> {
       .upsert({ id: STORE_ID, data: payload, updated_at: ts })
     if (error) throw error
     lastPushedAt = ts
+    // Align localModifiedAt with the timestamp we just wrote to Supabase so the
+    // pull comparison (localModifiedAt >= remoteTs) stays accurate on next startup.
+    localModifiedAt = new Date(ts).getTime()
+    try { localStorage.setItem(MODIFIED_AT_KEY, String(localModifiedAt)) } catch {}
     return true
   } catch (e) {
     console.warn('[supabase] store_data push failed:', e)
@@ -115,7 +119,12 @@ async function pullFromSupabase() {
     // in-flight or failed), don't overwrite — push local data up instead.
     const remoteTs = row.updated_at ? new Date(row.updated_at).getTime() : 0
     if (localModifiedAt > remoteTs) {
+      // Local has unsaved changes — push them up instead of pulling.
       queueWrite()
+      return
+    }
+    if (localModifiedAt === remoteTs) {
+      // Already in sync — nothing to do.
       return
     }
     applyRemote(row.data as SyncedData)
@@ -151,8 +160,12 @@ if (typeof window !== 'undefined') {
     .channel('store_data-changes')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'store_data' }, (payload) => {
       const row = payload.new as any
-      // Ignore echo of our own push (same timestamp we just wrote)
+      // Ignore echo of our own push (same timestamp we just wrote).
       if (row?.updated_at && row.updated_at === lastPushedAt) return
+      // After a page refresh lastPushedAt resets, so also guard with a timestamp
+      // comparison — never let a realtime event overwrite data that is locally newer.
+      const remoteTs = row?.updated_at ? new Date(row.updated_at).getTime() : 0
+      if (localModifiedAt >= remoteTs) return
       if (row?.data) applyRemote(row.data as SyncedData)
     })
     .subscribe()

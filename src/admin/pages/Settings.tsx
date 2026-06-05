@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
-import { Download, RotateCcw, Save, Trash2, Upload } from 'lucide-react'
-import { getData, resetStore, setData, useStore } from '../../data/store'
+import { Download, Loader2, RotateCcw, Save, Trash2, Upload } from 'lucide-react'
+import { getData, resetStore, saveAll, setData, useStore } from '../../data/store'
 import type { StoreSettings } from '../../data/types'
 import { PageHeader, Toast } from '../ui'
 
@@ -8,12 +8,19 @@ export default function Settings() {
   const settings = useStore((d) => d.settings)
   const [form, setForm] = useState<StoreSettings>(structuredClone(settings))
   const [toast, setToast] = useState('')
+  const [saving, setSaving] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const set = <K extends keyof StoreSettings>(k: K, v: StoreSettings[K]) => setForm((f) => ({ ...f, [k]: v }))
   const flash = (m: string) => { setToast(m); setTimeout(() => setToast(''), 1600) }
 
-  function save() { setData((d) => { d.settings = form; return d }); flash('Settings saved ✓') }
+  async function save() {
+    setSaving(true)
+    setData((d) => { d.settings = form; return d })
+    await saveAll()
+    setSaving(false)
+    flash('Settings saved ✓')
+  }
 
   function exportData() {
     const blob = new Blob([JSON.stringify(getData(), null, 2)], { type: 'application/json' })
@@ -30,7 +37,7 @@ export default function Settings() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <PageHeader title="Settings" subtitle="Store configuration" action={<button onClick={save} className="btn-primary"><Save size={17} /> Save changes</button>} />
+      <PageHeader title="Settings" subtitle="Store configuration" action={<button onClick={save} disabled={saving} className="btn-primary disabled:opacity-60">{saving ? <Loader2 size={17} className="animate-spin" /> : <Save size={17} />} {saving ? 'Saving…' : 'Save changes'}</button>} />
 
       <div className="space-y-6">
         <section className="card p-6">

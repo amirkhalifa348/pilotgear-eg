@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, GripVertical, Plus, Trash2, Upload, X } from 'lucide-react'
-import { uid, upsertProduct, useStore } from '../../data/store'
+import { ArrowLeft, GripVertical, Loader2, Plus, Trash2, Upload, X } from 'lucide-react'
+import { saveAll, uid, upsertProduct, useStore } from '../../data/store'
 import type { Product, ProductVariant } from '../../data/types'
 import { Toast } from '../ui'
 
@@ -26,6 +26,7 @@ export default function ProductEditor() {
   const existing = id ? products.find((p) => p.id === id) : undefined
   const [p, setP] = useState<Product>(() => existing ? structuredClone(existing) : { ...emptyProduct(), collectionId: collections[0]?.id || '' })
   const [toast, setToast] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [slugTouched, setSlugTouched] = useState(!!existing)
 
   const set = <K extends keyof Product>(k: K, v: Product[K]) => setP((x) => ({ ...x, [k]: v }))
@@ -65,10 +66,13 @@ export default function ProductEditor() {
     setP((x) => ({ ...x, variants: (x.variants || []).filter((_, n) => n !== i) }))
   }
 
-  function save() {
+  async function save() {
     if (!p.title.trim()) { alert('Please enter a product title'); return }
+    setSaving(true)
     const final = { ...p, slug: p.slug || slugify(p.title), highlights: p.highlights.filter(Boolean), specs: p.specs.filter((s) => s.label || s.value), images: p.images.length ? p.images : ['/brand/logo.png'] }
     upsertProduct(final)
+    await saveAll()
+    setSaving(false)
     setToast(true)
     setTimeout(() => nav('/admin/products'), 700)
   }
@@ -84,7 +88,7 @@ export default function ProductEditor() {
         <h1 className="font-head text-2xl font-extrabold text-navy-900">{existing ? 'Edit product' : 'New product'}</h1>
         <div className="flex gap-2">
           <Link to="/admin/products" className="btn-ghost">Cancel</Link>
-          <button onClick={save} className="btn-primary">Save product</button>
+          <button onClick={save} disabled={saving} className="btn-primary disabled:opacity-60">{saving && <Loader2 size={16} className="animate-spin" />} {saving ? 'Saving…' : 'Save product'}</button>
         </div>
       </div>
 
