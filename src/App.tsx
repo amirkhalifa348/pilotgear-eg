@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect } from 'react'
 import { Route, Routes, useLocation } from 'react-router-dom'
-import { track } from './data/store'
+import { track, useStore } from './data/store'
+import { initPixel, pixel } from './lib/pixel'
 import StoreLayout from './components/storefront/StoreLayout'
 import Home from './pages/Home'
 import Shop from './pages/Shop'
@@ -17,10 +18,15 @@ const AdminApp = lazy(() => import('./admin/AdminApp'))
 
 function ScrollAndTrack() {
   const loc = useLocation()
+  const pixelId = useStore((d) => d.settings.facebookPixelId)
+
+  useEffect(() => { initPixel(pixelId) }, [pixelId])
+
   useEffect(() => {
     window.scrollTo({ top: 0 })
     if (!loc.pathname.startsWith('/admin')) {
       track({ type: 'page_view', path: loc.pathname })
+      pixel('PageView')
     }
   }, [loc.pathname])
   return null

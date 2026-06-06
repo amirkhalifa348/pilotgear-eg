@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Check, ChevronRight, Gift, Minus, Plus, ShieldCheck, Truck } from 'lucide-react'
 import { formatMoney, track, useStore } from '../data/store'
+import { pixel } from '../lib/pixel'
 import QtyStepper from '../components/ui/QtyStepper'
 import AddToCartButton from '../components/ui/AddToCartButton'
 import ProductCard from '../components/storefront/ProductCard'
@@ -21,7 +22,10 @@ export default function ProductPage() {
   useEffect(() => {
     setActiveImg(0); setQty(1)
     setVariantId(product?.variants?.[0]?.id)
-    if (product) track({ type: 'product_view', productId: product.id })
+    if (product) {
+      track({ type: 'product_view', productId: product.id })
+      pixel('ViewContent', { content_ids: [product.id], content_name: product.title, value: product.price, currency: 'EGP', content_type: 'product' })
+    }
   }, [product?.id])
 
   if (!product) return <NotFound />

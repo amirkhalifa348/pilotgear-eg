@@ -133,6 +133,7 @@ export interface StoreSettings {
   announcement: string
   adminPassword: string
   ntfyTopic: string
+  facebookPixelId: string
 }
 
 export type SaleChannel = 'whatsapp' | 'instagram' | 'phone' | 'in_person' | 'other'

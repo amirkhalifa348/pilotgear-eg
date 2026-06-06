@@ -54,6 +54,19 @@ export default function Settings() {
         </section>
 
         <section className="card p-6">
+          <h2 className="mb-1 font-head font-bold text-navy-900">Meta Ads (Facebook Pixel)</h2>
+          <p className="mb-4 text-sm text-slatey">Paste your Pixel ID from Meta Events Manager. Once set, the store fires PageView, ViewContent, AddToCart, InitiateCheckout and Purchase events automatically.</p>
+          <Field label="Facebook Pixel ID" hint="15-digit number from Meta Business Suite → Events Manager → Data Sources.">
+            <input className="input font-mono" value={form.facebookPixelId ?? ''} onChange={(e) => set('facebookPixelId', e.target.value)} placeholder="e.g. 123456789012345" />
+          </Field>
+          {form.facebookPixelId && (
+            <p className="mt-2 rounded-xl bg-green-50 px-4 py-3 text-xs text-green-800">
+              Pixel <strong>{form.facebookPixelId}</strong> is active. Verify it in Meta Events Manager after placing a test order.
+            </p>
+          )}
+        </section>
+
+        <section className="card p-6">
           <h2 className="mb-1 font-head font-bold text-navy-900">Order notifications</h2>
           <p className="mb-4 text-sm text-slatey">Get an instant phone notification every time an order is placed. Uses <a href="https://ntfy.sh" target="_blank" rel="noreferrer" className="text-navy underline">ntfy.sh</a> (free). Install the <strong>ntfy</strong> app on your phone, then subscribe to the topic you set here.</p>
           <Field label="ntfy topic" hint="e.g. pilotgear-orders-abc123  ·  Keep it private (random suffix). Leave empty to disable.">

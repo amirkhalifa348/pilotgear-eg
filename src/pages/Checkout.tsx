@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Banknote, Lock, ShieldCheck } from 'lucide-react'
 import { clearCart, createOrder, formatMoney, track, useCart, useStore } from '../data/store'
+import { pixel } from '../lib/pixel'
 import type { OrderItem } from '../data/types'
 
 const GOVERNORATES = ['Cairo', 'Giza', 'Alexandria', 'Qalyubia', 'Dakahlia', 'Sharqia', 'Gharbia', 'Monufia', 'Beheira', 'Kafr El Sheikh', 'Damietta', 'Port Said', 'Ismailia', 'Suez', 'Faiyum', 'Beni Suef', 'Minya', 'Asyut', 'Sohag', 'Qena', 'Luxor', 'Aswan', 'Red Sea', 'New Valley', 'Matrouh', 'North Sinai', 'South Sinai']
@@ -20,7 +21,10 @@ export default function Checkout() {
   const shipping = subtotal >= settings.freeShippingThreshold ? 0 : settings.flatShipping
   const total = subtotal + shipping
 
-  useEffect(() => { track({ type: 'begin_checkout', value: total }) }, [])
+  useEffect(() => {
+    track({ type: 'begin_checkout', value: total })
+    pixel('InitiateCheckout', { value: total, currency: 'EGP', num_items: lines.reduce((s, l) => s + l.c.qty, 0), content_ids: lines.map((l) => l.p.id) })
+  }, [])
   useEffect(() => { if (lines.length === 0 && !submitting) nav('/cart') }, [lines.length])
 
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }))

@@ -2,6 +2,7 @@ import { useSyncExternalStore } from 'react'
 import type { AnalyticsEvent, CartItem, Order, Product, SaleLog, StoreData } from './types'
 import { buildSeed } from './seed'
 import { STORE_ID, supabase } from './supabase'
+import { pixel } from '../lib/pixel'
 
 const KEY = 'pilotgear:data:v9'
 const CART_KEY = 'pilotgear:cart:v9'
@@ -332,6 +333,14 @@ export function createOrder(order: Omit<Order, 'id' | 'number' | 'createdAt' | '
     return d
   })
   track({ type: 'purchase', value: full.total, orderId: full.id })
+  pixel('Purchase', {
+    value: full.total,
+    currency: 'EGP',
+    content_ids: full.items.map((i) => i.productId),
+    content_type: 'product',
+    num_items: full.items.reduce((s, i) => s + i.qty, 0),
+    order_id: full.id,
+  })
 
   // push order to Supabase
   supabase.from('orders').insert({
@@ -451,6 +460,8 @@ export function addToCart(productId: string, qty = 1, variantId?: string) {
   cart = [...cart]
   persistCart()
   track({ type: 'add_to_cart', productId })
+  const p = data.products.find((x) => x.id === productId)
+  if (p) pixel('AddToCart', { content_ids: [productId], content_name: p.title, value: p.price * qty, currency: 'EGP', content_type: 'product' })
 }
 
 export function setCartQty(productId: string, qty: number, variantId?: string) {
