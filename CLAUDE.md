@@ -9,7 +9,7 @@ selling aviation-themed accessories (mainly keychains) plus a desk lamp and coas
 Founded to bring aviation passion to Egypt for pilots, aspiring pilots and gift buyers.
 
 - **Stack:** React 18 + TypeScript + Vite + Tailwind CSS + React Router 6 + Recharts + lucide-react
-- **Data:** 100% self-contained in the browser via `localStorage` (no server/database).
+- **Data:** Supabase-backed and synced across all devices. `localStorage` is a local cache/offline mirror, NOT the source of truth. See "Data sync model" below.
 - **Payments:** Cash on Delivery only (Egypt).
 - **Deploy target:** Cloudflare Pages (build `npm run build`, output `dist`, `public/_redirects` handles SPA routing).
 
@@ -37,13 +37,36 @@ Preview tooling: `.claude/launch.json` defines server name `pilotgear` (runs dev
 | `src/admin/pages/*` | Dashboard (analytics), Products, ProductEditor, Collections, Orders, Inventory, PageBuilder, Settings |
 | `src/admin/analytics.ts` | Metrics/funnel/top-product computation from events + orders |
 
-## IMPORTANT: data versioning
-Store data persists in `localStorage` under `KEY` in `store.ts`. Because a returning
-user's browser already holds the old seed, **any change to `seed.ts` only takes effect
-if you bump the version**: increment both `KEY` and `CART_KEY` in `store.ts`
-(e.g. `pilotgear:data:v3` → `v4`) and the `version` field in `buildSeed()`.
-Current version: **v3**.
-Alternatively the user can use **Admin → Settings → Factory reset**.
+## Data sync model (READ THIS before touching `store.ts`)
+Supabase project `ecpeubpedcvxhwdbunzm` (`STORE_ID = 'main'`). Three tables, all with
+public RLS policies (anon key, no auth — single-admin store):
+- **`store_data`** (one row, `id='main'`): products, collections, homepage blocks,
+  settings, saleLogs — as one JSONB blob. This is the source of truth for the catalog.
+- **`orders`**: one row per order. Created on checkout; status/delete from admin.
+  RLS has INSERT/SELECT/UPDATE **and DELETE** policies (DELETE was missing originally,
+  which silently blocked order deletion — fixed).
+- **`events`**: analytics events (page_view, product_view, add_to_cart, begin_checkout,
+  purchase) from **every visitor browser**. This is what makes the dashboard funnel /
+  conversion / traffic real and cross-device, not just the admin's own browser.
+
+How `store.ts` keeps it consistent:
+- `setData()` → mutates in memory, sets a persisted **`dirty`** flag, writes a slim
+  localStorage cache (events excluded to avoid quota), debounced push to `store_data`.
+- Pushes are **serialized** (`flushToSupabase`): concurrent calls share one in-flight
+  promise + result, so "Save All" never reports a false failure.
+- Pull/echo arbitration uses a numeric **`lastSyncedAt`** high-water mark (NOT timestamp
+  strings). A pull is skipped while `dirty` so it can't clobber unsaved edits.
+- Events are **batched** to `events` (keepalive beacon on pagehide) and pulled back into
+  `data.events` (last 90 days) on load / 30s poll / focus. Events are NOT in localStorage.
+- "Clear orders & analytics" and "Factory reset" wipe the `orders`/`events` tables
+  server-side too (else a poll would resurrect them).
+
+## IMPORTANT: data/seed versioning
+Returning browsers cache `store_data` in `localStorage` under `KEY`, and Supabase holds
+the live blob. To roll out a `seed.ts` change to existing stores you must bump the
+version (`KEY`/`CART_KEY` in `store.ts` + `version` in `buildSeed()`) **and** the owner
+must Factory reset (or the blob in Supabase must be updated), since the remote row is the
+source of truth. Current `KEY`/`CART_KEY`: **v10**; `buildSeed().version`: **8**.
 
 ## Brand identity (exact)
 - Navy (primary): `#0E3A5C`; navy-deep `#0A2C46`
@@ -96,5 +119,11 @@ empty store) to preview analytics.
   which previously broke the full-screen drawer overlay. Keep it a sibling of `<header>`.
 - Variant image swapping relies on `variant.image`; A330 variants intentionally have no
   per-colour image (no clean source), so the selector is functional only.
-- Because data is per-browser, customer orders are stored in the customer's browser, not
-  centrally. To sync orders across devices, swap the `store.ts` data layer for a real API.
+- Orders, catalog and analytics are synced via Supabase (see "Data sync model"), so they
+  are consistent across devices. `localStorage` is only a cache; never treat it as the
+  source of truth or assume an edit is saved just because it shows locally.
+- The `events` table receives an insert per visitor action — fine for this store's
+  volume. If traffic grows large, consider server-side aggregation instead of pulling
+  raw events into `data.events`.
+- "Load demo data" sets an in-memory `previewMode` that pauses remote pulls so the demo
+  isn't wiped; it does NOT write to Supabase and is gone on refresh.
