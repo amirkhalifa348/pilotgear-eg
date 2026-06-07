@@ -154,11 +154,19 @@ function Banner({ p }: { p: any }) {
 function GiftCta({ p }: { p: any }) {
   return (
     <section className="container-px py-10 sm:py-14">
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-gold-100 to-cream p-7 text-center sm:p-14">
-        <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-gold text-navy-deep"><Gift size={26} /></div>
-        <h2 className="mx-auto mt-5 max-w-2xl font-head text-2xl font-extrabold text-navy-900 sm:text-4xl">{p.title}</h2>
-        <p className="mx-auto mt-3 max-w-xl text-[15px] text-navy-600 sm:mt-4 sm:text-base">{p.text}</p>
-        <Link to={p.href} className="btn-primary mt-6 w-full justify-center sm:mt-7 sm:w-auto">{p.cta} <ArrowRight size={18} /></Link>
+      <div className="relative overflow-hidden rounded-3xl text-center">
+        <img
+          src="https://images.unsplash.com/photo-1540962351504-03099e0a754b?w=1400&q=80&auto=format&fit=crop"
+          alt=""
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+        <div className="absolute inset-0 bg-navy-deep/75" />
+        <div className="relative p-7 sm:p-14">
+          <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-gold text-navy-deep"><Gift size={26} /></div>
+          <h2 className="mx-auto mt-5 max-w-2xl font-head text-2xl font-extrabold text-white sm:text-4xl">{p.title}</h2>
+          <p className="mx-auto mt-3 max-w-xl text-[15px] text-white/75 sm:mt-4 sm:text-base">{p.text}</p>
+          <Link to={p.href} className="btn-gold mt-6 w-full justify-center sm:mt-7 sm:w-auto">{p.cta} <ArrowRight size={18} /></Link>
+        </div>
       </div>
     </section>
   )
