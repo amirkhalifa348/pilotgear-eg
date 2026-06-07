@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { DollarSign, Eye, MousePointerClick, Package, Sparkles, TrendingUp } from 'lucide-react'
-import { formatMoney, loadDemo, uid, useStore } from '../../data/store'
+import { DollarSign, Eye, Loader2, MousePointerClick, Package, Sparkles, TrendingUp } from 'lucide-react'
+import { formatMoney, loadDemo, uid, useEventsLoaded, useStore } from '../../data/store'
 import { computeMetrics, dailySeries, DAY, lastNDays, topProducts } from '../analytics'
 import type { AnalyticsEvent, Order } from '../../data/types'
 
@@ -82,6 +82,7 @@ export default function Dashboard() {
   const events = useStore((d) => d.events)
   const orders = useStore((d) => d.orders)
   const products = useStore((d) => d.products)
+  const eventsLoaded = useEventsLoaded()
   const [range, setRange] = useState(30)
   const sinceTs = Date.now() - range * DAY
 
@@ -91,7 +92,9 @@ export default function Dashboard() {
   const recent = orders.slice(0, 5)
   const lowStock = products.filter((p) => p.active && p.stock <= p.lowStockThreshold)
 
+  // Only show "No data yet" after the events pull has resolved — avoids false empty state on first load.
   const hasData = events.length > 0 || orders.length > 0
+  const stillLoading = !eventsLoaded && !hasData
 
   return (
     <div>
@@ -107,7 +110,13 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {!hasData && (
+      {stillLoading && (
+        <div className="mt-6 flex items-center gap-3 rounded-2xl border border-navy-50 bg-white p-6 shadow-card">
+          <Loader2 size={22} className="animate-spin text-navy-400" />
+          <p className="text-sm font-semibold text-navy-600">Loading analytics from the server…</p>
+        </div>
+      )}
+      {!stillLoading && !hasData && (
         <div className="mt-6 flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-navy-100 bg-white p-8 text-center sm:flex-row sm:text-left">
           <Sparkles className="text-gold" size={28} />
           <div className="flex-1">

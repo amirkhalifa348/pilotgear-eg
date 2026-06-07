@@ -27,6 +27,10 @@ export function initPixel(pixelId: string | undefined) {
   })(window, document, 'script', 'https://connect.facebook.net/en_US/fbevents.js')
 
   window.fbq!('init', pixelId)
+  // Fire PageView immediately after init (matches Meta's standard snippet).
+  // This covers the case where the pixel ID was loaded from Supabase async,
+  // so the pathname-change effect in ScrollAndTrack already ran as a no-op.
+  window.fbq!('track', 'PageView')
 }
 
 /** Fire a standard or custom Pixel event. No-op if pixel is not loaded. */

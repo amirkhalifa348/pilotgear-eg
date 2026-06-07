@@ -37,6 +37,9 @@ let dirty: boolean =
 let editSeq = 0
 // When demo analytics are loaded, suppress remote pulls so they aren't wiped.
 let previewMode = false
+// Set to true after the first events pull completes (success or failure).
+// Used by the dashboard to show "loading" instead of "no data yet" while in-flight.
+let eventsLoaded = false
 
 function notify() {
   listeners.forEach((l) => l())
@@ -238,8 +241,8 @@ async function pullEventsFromSupabase() {
       .gte('ts', since)
       .order('ts', { ascending: true })
       .limit(20000)
-    if (error) { console.warn('[supabase] events pull error', error.message); return }
-    if (!rows) return
+    if (error) { console.warn('[supabase] events pull error', error.message); eventsLoaded = true; notify(); return }
+    if (!rows) { eventsLoaded = true; notify(); return }
     const events: AnalyticsEvent[] = rows.map((r: any, i) => ({
       id: `db-${i}`,
       type: r.type,
@@ -250,9 +253,12 @@ async function pullEventsFromSupabase() {
       orderId: r.order_id ?? undefined,
     }))
     data = { ...data, events }
+    eventsLoaded = true
     notify()
   } catch (e) {
     console.warn('[supabase] events pull failed', e)
+    eventsLoaded = true
+    notify()
   }
 }
 
@@ -593,9 +599,21 @@ export function track(e: Omit<AnalyticsEvent, 'id' | 'ts'>) {
   else scheduleEventFlush()
 }
 
+/**
+ * Reactive hook: returns true once the first Supabase events pull has resolved.
+ * Use this instead of isEventsLoaded() inside React components.
+ */
+export function useEventsLoaded(): boolean {
+  return useSyncExternalStore(subscribe, () => eventsLoaded, () => eventsLoaded)
+}
+
+/** Non-reactive read. Use useEventsLoaded() inside React components instead. */
+export function isEventsLoaded() { return eventsLoaded }
+
 /** Load demo analytics for preview. Local-only; suppresses remote pulls this session. */
 export function loadDemo(builder: (d: StoreData) => StoreData) {
   previewMode = true
+  eventsLoaded = true
   data = builder(structuredClone(data))
   notify()
 }
