@@ -1,44 +1,88 @@
 import { useSyncExternalStore } from 'react'
 import type { AnalyticsEvent, CartItem, Order, Product, SaleLog, StoreData } from './types'
 import { buildSeed } from './seed'
-import { STORE_ID, supabase } from './supabase'
+import { STORE_ID, SUPABASE_ANON, SUPABASE_URL, supabase } from './supabase'
 import { pixel } from '../lib/pixel'
 
 const KEY = 'pilotgear:data:v10'
 const CART_KEY = 'pilotgear:cart:v10'
 const ADMIN_KEY = 'pilotgear:admin-auth'
-// Tracks when this browser last wrote data locally — shared across tabs via localStorage
-const MODIFIED_AT_KEY = 'pilotgear:modified-at'
+// Numeric high-water mark of the newest store_data we have pushed or pulled.
+const SYNCED_AT_KEY = 'pilotgear:synced-at'
+// '1' when there are local store_data edits not yet confirmed-saved to Supabase.
+const DIRTY_KEY = 'pilotgear:dirty'
+// Stable per-browser id so we can count unique visitors later.
+const SESSION_KEY = 'pilotgear:session'
 
-/** Fields synced to Supabase store_data row (not orders/events) */
+const DAY = 86400000
+/** How far back the dashboard pulls events (covers the 90-day range option). */
+const EVENT_WINDOW_MS = 90 * DAY
+
+/** Fields synced to the Supabase store_data row (orders + events live in their own tables) */
 type SyncedData = Omit<StoreData, 'orders' | 'events'>
 
 /* ----------------------------- core store ----------------------------- */
 let data: StoreData = load()
 const listeners = new Set<() => void>()
 
-// Initialise from localStorage so a new tab inherits the last-write timestamp
-let localModifiedAt: number = parseInt(
-  (typeof localStorage !== 'undefined' && localStorage.getItem(MODIFIED_AT_KEY)) || '0',
+// Sync bookkeeping (persisted so it survives a refresh).
+let lastSyncedAt: number = parseInt(
+  (typeof localStorage !== 'undefined' && localStorage.getItem(SYNCED_AT_KEY)) || '0',
+  10,
 )
+let dirty: boolean =
+  typeof localStorage !== 'undefined' && localStorage.getItem(DIRTY_KEY) === '1'
+// Bumped on every local store_data edit; lets a push detect edits that landed
+// while it was in flight (so it knows whether it fully captured the latest state).
+let editSeq = 0
+// When demo analytics are loaded, suppress remote pulls so they aren't wiped.
+let previewMode = false
+
+function notify() {
+  listeners.forEach((l) => l())
+}
 
 function load(): StoreData {
   try {
     const raw = localStorage.getItem(KEY)
-    if (raw) return JSON.parse(raw) as StoreData
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<StoreData>
+      // Normalise: events are no longer persisted locally (pulled from Supabase),
+      // and older blobs may predate saleLogs.
+      return {
+        ...buildSeed(),
+        ...parsed,
+        events: [],
+        saleLogs: parsed.saleLogs ?? [],
+        orders: parsed.orders ?? [],
+      } as StoreData
+    }
   } catch {}
   const seed = buildSeed()
-  try { localStorage.setItem(KEY, JSON.stringify(seed)) } catch {}
+  writeLocalRaw(seed)
   return seed
 }
 
-function persist() {
-  localModifiedAt = Date.now()
+/** Serialise without the volatile events array (keeps the blob small, avoids quota). */
+function writeLocalRaw(d: StoreData) {
+  const slim = { ...d, events: [] as AnalyticsEvent[] }
   try {
-    localStorage.setItem(KEY, JSON.stringify(data))
-    localStorage.setItem(MODIFIED_AT_KEY, String(localModifiedAt))
-  } catch {}
-  listeners.forEach((l) => l())
+    localStorage.setItem(KEY, JSON.stringify(slim))
+    return
+  } catch {
+    // Quota exceeded: shed order history (it lives in Supabase) and retry once.
+    try {
+      localStorage.setItem(KEY, JSON.stringify({ ...slim, orders: d.orders.slice(0, 200) }))
+    } catch {
+      console.warn('[store] localStorage write failed (quota). Data is still synced to Supabase.')
+    }
+  }
+}
+
+/** Persist current in-memory data locally and notify React. Does NOT push. */
+function writeLocal() {
+  writeLocalRaw(data)
+  notify()
 }
 
 function subscribe(cb: () => void) {
@@ -46,64 +90,110 @@ function subscribe(cb: () => void) {
   return () => listeners.delete(cb)
 }
 
-/** Pull synced fields from a remote payload while keeping local orders/events */
+/** Pull synced fields from a remote payload while keeping local orders/events. */
 function applyRemote(remote: SyncedData) {
-  // Spread all synced fields — keeps orders/events local-only.
-  // Using spread means any new fields added to SyncedData are auto-included.
   data = { ...data, ...remote }
-  try { localStorage.setItem(KEY, JSON.stringify(data)) } catch {}
-  listeners.forEach((l) => l())
+  writeLocalRaw(data)
+  notify()
 }
 
-/* ----------------------------- Supabase sync ----------------------------- */
-let syncing = false
-let pendingSync = false
-let writeTimer: ReturnType<typeof setTimeout> | null = null
-// Track our last push version so realtime echoes of our own writes are ignored
-let lastPushedAt = ''
+/* ----------------------------- dirty-flag helpers ----------------------------- */
+function markDirty() {
+  editSeq++
+  dirty = true
+  try { localStorage.setItem(DIRTY_KEY, '1') } catch {}
+}
 
+function setWatermark(ts: number) {
+  lastSyncedAt = ts
+  try { localStorage.setItem(SYNCED_AT_KEY, String(ts)) } catch {}
+}
+
+function markClean(ts: number) {
+  dirty = false
+  setWatermark(ts)
+  try { localStorage.setItem(DIRTY_KEY, '0') } catch {}
+}
+
+/* ----------------------------- Supabase push (serialized) ----------------------------- */
 function syncedPayload(d: StoreData): SyncedData {
   const { orders, events, ...rest } = d
   return rest
 }
 
-async function pushToSupabase(): Promise<boolean> {
-  if (syncing) { pendingSync = true; return false }
-  syncing = true
+let flushing = false
+let flushQueued = false
+let flushPromise: Promise<boolean> = Promise.resolve(true)
+let writeTimer: ReturnType<typeof setTimeout> | null = null
+let retryTimer: ReturnType<typeof setTimeout> | null = null
+
+/** One upsert of the current store_data. Returns true on success. */
+async function doPush(): Promise<boolean> {
+  const editAtStart = editSeq
   const ts = new Date().toISOString()
+  const tsMs = new Date(ts).getTime()
   try {
-    const payload = syncedPayload(data)
     const { error } = await supabase
       .from('store_data')
-      .upsert({ id: STORE_ID, data: payload, updated_at: ts })
-    if (error) throw error
-    lastPushedAt = ts
-    // Align localModifiedAt with the timestamp we just wrote to Supabase so the
-    // pull comparison (localModifiedAt >= remoteTs) stays accurate on next startup.
-    localModifiedAt = new Date(ts).getTime()
-    try { localStorage.setItem(MODIFIED_AT_KEY, String(localModifiedAt)) } catch {}
+      .upsert({ id: STORE_ID, data: syncedPayload(data), updated_at: ts })
+    if (error) {
+      console.warn('[supabase] store_data push failed:', error.message)
+      return false
+    }
+    // Advance the watermark so our own realtime echo is ignored.
+    if (editSeq === editAtStart) markClean(tsMs)
+    else setWatermark(tsMs) // more edits arrived mid-push — stay dirty, push again
     return true
   } catch (e) {
-    console.warn('[supabase] store_data push failed:', e)
+    console.warn('[supabase] store_data push error:', e)
     return false
-  } finally {
-    syncing = false
-    if (pendingSync) { pendingSync = false; queueWrite() }
   }
 }
 
-/** Force an immediate sync to Supabase — cancels the debounce timer first. */
-export async function saveAll(): Promise<boolean> {
-  if (writeTimer) { clearTimeout(writeTimer); writeTimer = null }
-  return pushToSupabase()
+/**
+ * Flush local store_data to Supabase. Safe to call concurrently: a single push
+ * runs at a time and always sends the latest data; overlapping callers share the
+ * same in-flight promise and its result (so a manual "Save All" never reports a
+ * false failure just because a debounced push was already running).
+ */
+function flushToSupabase(): Promise<boolean> {
+  if (flushing) { flushQueued = true; return flushPromise }
+  flushing = true
+  flushPromise = (async () => {
+    let ok = true
+    do {
+      flushQueued = false
+      ok = await doPush()
+      if (!ok) break // stop the loop on failure; a retry is scheduled below
+    } while (flushQueued)
+    flushing = false
+    if (!ok) scheduleRetry()
+    return ok
+  })()
+  return flushPromise
 }
 
 function queueWrite() {
   if (writeTimer) clearTimeout(writeTimer)
-  writeTimer = setTimeout(pushToSupabase, 200)
+  writeTimer = setTimeout(() => { writeTimer = null; flushToSupabase() }, 300)
 }
 
+function scheduleRetry() {
+  if (retryTimer) return
+  retryTimer = setTimeout(() => { retryTimer = null; if (dirty) flushToSupabase() }, 4000)
+}
+
+/** Force an immediate sync to Supabase — used by the manual "Save All" button. */
+export async function saveAll(): Promise<boolean> {
+  if (writeTimer) { clearTimeout(writeTimer); writeTimer = null }
+  return flushToSupabase()
+}
+
+/* ----------------------------- Supabase pull ----------------------------- */
 async function pullFromSupabase() {
+  if (previewMode) return
+  // Never let a pull clobber local edits that haven't been saved yet.
+  if (dirty) { flushToSupabase(); return }
   try {
     const { data: row, error } = await supabase
       .from('store_data')
@@ -111,30 +201,18 @@ async function pullFromSupabase() {
       .eq('id', STORE_ID)
       .maybeSingle()
     if (error) { console.warn('[supabase] store_data pull error', error.message); return }
-    if (!row) {
-      // First run on this Supabase project: seed it from local
-      await pushToSupabase()
-      return
-    }
-    // If the local data is newer than what Supabase has (e.g. a push is still
-    // in-flight or failed), don't overwrite — push local data up instead.
+    if (!row) { flushToSupabase(); return } // first run on a fresh project: seed it
     const remoteTs = row.updated_at ? new Date(row.updated_at).getTime() : 0
-    if (localModifiedAt > remoteTs) {
-      // Local has unsaved changes — push them up instead of pulling.
-      queueWrite()
-      return
-    }
-    if (localModifiedAt === remoteTs) {
-      // Already in sync — nothing to do.
-      return
-    }
+    if (remoteTs <= lastSyncedAt) return // not newer than what we have (also ignores our echo)
     applyRemote(row.data as SyncedData)
+    setWatermark(remoteTs)
   } catch (e) {
-    console.warn('[supabase] pull failed (offline?)', e)
+    console.warn('[supabase] store_data pull failed (offline?)', e)
   }
 }
 
 async function pullOrdersFromSupabase() {
+  if (previewMode) return
   try {
     const { data: rows, error } = await supabase
       .from('orders')
@@ -143,31 +221,122 @@ async function pullOrdersFromSupabase() {
       .limit(500)
     if (error) { console.warn('[supabase] orders pull error', error.message); return }
     if (!rows) return
-    const remoteOrders = rows.map((r) => r.data as Order)
-    data = { ...data, orders: remoteOrders }
-    try { localStorage.setItem(KEY, JSON.stringify(data)) } catch {}
-    listeners.forEach((l) => l())
+    data = { ...data, orders: rows.map((r) => r.data as Order) }
+    writeLocal()
   } catch (e) {
     console.warn('[supabase] orders pull failed', e)
   }
 }
 
-// Kick off initial sync + realtime subscriptions
-if (typeof window !== 'undefined') {
+async function pullEventsFromSupabase() {
+  if (previewMode) return
+  try {
+    const since = new Date(Date.now() - EVENT_WINDOW_MS).toISOString()
+    const { data: rows, error } = await supabase
+      .from('events')
+      .select('type, ts, path, product_id, value, order_id')
+      .gte('ts', since)
+      .order('ts', { ascending: true })
+      .limit(20000)
+    if (error) { console.warn('[supabase] events pull error', error.message); return }
+    if (!rows) return
+    const events: AnalyticsEvent[] = rows.map((r: any, i) => ({
+      id: `db-${i}`,
+      type: r.type,
+      ts: new Date(r.ts).getTime(),
+      path: r.path ?? undefined,
+      productId: r.product_id ?? undefined,
+      value: r.value ?? undefined,
+      orderId: r.order_id ?? undefined,
+    }))
+    data = { ...data, events }
+    notify()
+  } catch (e) {
+    console.warn('[supabase] events pull failed', e)
+  }
+}
+
+/** Pull everything that lives remotely. */
+function syncAll() {
   pullFromSupabase()
   pullOrdersFromSupabase()
+  pullEventsFromSupabase()
+}
+
+/* ----------------------------- event ingest (batched) ----------------------------- */
+type EventRow = {
+  type: string
+  ts: string
+  path: string | null
+  product_id: string | null
+  value: number | null
+  order_id: string | null
+  session: string
+}
+
+let eventQueue: EventRow[] = []
+let eventTimer: ReturnType<typeof setTimeout> | null = null
+
+function sessionId(): string {
+  try {
+    let s = localStorage.getItem(SESSION_KEY)
+    if (!s) { s = uid('s'); localStorage.setItem(SESSION_KEY, s) }
+    return s
+  } catch {
+    return 'anon'
+  }
+}
+
+function scheduleEventFlush() {
+  if (eventTimer) return
+  eventTimer = setTimeout(flushEvents, 3000)
+}
+
+async function flushEvents() {
+  if (eventTimer) { clearTimeout(eventTimer); eventTimer = null }
+  if (!eventQueue.length) return
+  const batch = eventQueue
+  eventQueue = []
+  try {
+    const { error } = await supabase.from('events').insert(batch)
+    if (error) console.warn('[supabase] events insert failed:', error.message)
+  } catch (e) {
+    console.warn('[supabase] events insert error', e)
+  }
+}
+
+/** Best-effort flush that survives page unload via fetch keepalive. */
+function beaconEvents() {
+  if (!eventQueue.length) return
+  const batch = eventQueue
+  eventQueue = []
+  try {
+    fetch(`${SUPABASE_URL}/rest/v1/events`, {
+      method: 'POST',
+      keepalive: true,
+      headers: {
+        apikey: SUPABASE_ANON,
+        authorization: `Bearer ${SUPABASE_ANON}`,
+        'content-type': 'application/json',
+        prefer: 'return=minimal',
+      },
+      body: JSON.stringify(batch),
+    }).catch(() => {})
+  } catch {}
+}
+
+/* ----------------------------- realtime + polling bootstrap ----------------------------- */
+if (typeof window !== 'undefined') {
+  syncAll()
 
   supabase
     .channel('store_data-changes')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'store_data' }, (payload) => {
+      if (previewMode || dirty) return
       const row = payload.new as any
-      // Ignore echo of our own push (same timestamp we just wrote).
-      if (row?.updated_at && row.updated_at === lastPushedAt) return
-      // After a page refresh lastPushedAt resets, so also guard with a timestamp
-      // comparison — never let a realtime event overwrite data that is locally newer.
       const remoteTs = row?.updated_at ? new Date(row.updated_at).getTime() : 0
-      if (localModifiedAt >= remoteTs) return
-      if (row?.data) applyRemote(row.data as SyncedData)
+      if (remoteTs <= lastSyncedAt) return // ignore our own echo + stale events
+      if (row?.data) { applyRemote(row.data as SyncedData); setWatermark(remoteTs) }
     })
     .subscribe()
 
@@ -175,73 +344,62 @@ if (typeof window !== 'undefined') {
     .channel('orders-changes')
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders' }, (payload) => {
       const order = (payload.new as any)?.data as Order | undefined
-      if (!order) return
-      const exists = data.orders.some((o) => o.id === order.id)
-      if (exists) return
+      if (!order || data.orders.some((o) => o.id === order.id)) return
       data = { ...data, orders: [order, ...data.orders] }
-      try { localStorage.setItem(KEY, JSON.stringify(data)) } catch {}
-      listeners.forEach((l) => l())
+      writeLocal()
     })
     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders' }, (payload) => {
       const order = (payload.new as any)?.data as Order | undefined
       if (!order) return
-      data = { ...data, orders: data.orders.map((o) => o.id === order.id ? order : o) }
-      try { localStorage.setItem(KEY, JSON.stringify(data)) } catch {}
-      listeners.forEach((l) => l())
+      data = { ...data, orders: data.orders.map((o) => (o.id === order.id ? order : o)) }
+      writeLocal()
+    })
+    .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'orders' }, (payload) => {
+      const id = (payload.old as any)?.id as string | undefined
+      if (!id) return
+      data = { ...data, orders: data.orders.filter((o) => o.id !== id) }
+      writeLocal()
     })
     .subscribe()
 
-  // ── Polling fallback (30 s) ───────────────────────────────────────────────
-  // Realtime WebSockets drop frequently on mobile (tab backgrounding, network
-  // switches, iOS Safari throttling). Polling guarantees changes arrive even
-  // when the realtime channel is dead.
+  // Polling fallback: realtime WebSockets drop on mobile (backgrounding, network
+  // switches, iOS Safari throttling). Polling guarantees freshness regardless.
   const POLL_MS = 30_000
-  let pollTimer: ReturnType<typeof setInterval> | null = null
+  let pollTimer: ReturnType<typeof setInterval> | null = setInterval(() => {
+    if (document.visibilityState === 'visible') syncAll()
+  }, POLL_MS)
 
-  function startPolling() {
-    if (pollTimer) return
-    pollTimer = setInterval(() => {
-      if (document.visibilityState === 'visible') {
-        pullFromSupabase()
-        pullOrdersFromSupabase()
-      }
-    }, POLL_MS)
-  }
-
-  startPolling()
-
-  // ── Re-sync when tab becomes visible again ───────────────────────────────
-  // Mobile browsers suspend background tabs; the WebSocket dies silently.
-  // Pulling immediately on focus gives instant freshness when the user returns.
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') {
-      pullFromSupabase()
-      pullOrdersFromSupabase()
-    }
+    if (document.visibilityState === 'visible') syncAll()
+    else beaconEvents()
   })
+  window.addEventListener('online', syncAll)
+  window.addEventListener('pagehide', beaconEvents)
 
-  // ── Re-sync when device comes back online ────────────────────────────────
-  window.addEventListener('online', () => {
-    pullFromSupabase()
-    pullOrdersFromSupabase()
-  })
+  // If we refreshed with unsaved local edits, push them now.
+  if (dirty) flushToSupabase()
 
-  // Vite HMR: tear down channels before this module is replaced so the next
-  // hot instance can re-subscribe cleanly without the "after subscribe()" error.
+  // Vite HMR: tear down channels/timers before this module is replaced so the
+  // next hot instance can re-subscribe cleanly without the "after subscribe()" error.
   const hot = (import.meta as any).hot
   if (hot) {
     hot.dispose(() => {
       supabase.removeAllChannels()
       if (writeTimer) clearTimeout(writeTimer)
+      if (retryTimer) clearTimeout(retryTimer)
+      if (eventTimer) clearTimeout(eventTimer)
       if (pollTimer) clearInterval(pollTimer)
+      pollTimer = null
     })
   }
 }
 
-/** Replace whole store (admin save). Persists locally + pushes to Supabase. */
+/* ----------------------------- public store API ----------------------------- */
+/** Replace whole store (admin edit). Persists locally + pushes to Supabase. */
 export function setData(updater: (d: StoreData) => StoreData) {
   data = updater(structuredClone(data))
-  persist()
+  markDirty()
+  writeLocal()
   queueWrite()
 }
 
@@ -250,9 +408,26 @@ export function getData() {
 }
 
 export function resetStore() {
+  previewMode = false
   data = buildSeed()
-  persist()
-  queueWrite()
+  markDirty()
+  writeLocal()
+  flushToSupabase()
+  // Factory reset promises orders + analytics are wiped — clear them server-side too.
+  void clearRemoteOrdersAndEvents()
+}
+
+/** Delete every order and analytics event from Supabase (irreversible). */
+async function clearRemoteOrdersAndEvents() {
+  try { await supabase.from('orders').delete().not('id', 'is', null) } catch (e) { console.warn('[supabase] clear orders failed', e) }
+  try { await supabase.from('events').delete().not('id', 'is', null) } catch (e) { console.warn('[supabase] clear events failed', e) }
+}
+
+/** Clear orders + analytics everywhere (local + Supabase). Keeps products/settings. */
+export async function clearOrdersAndAnalytics() {
+  data = { ...data, orders: [], events: [] }
+  writeLocal()
+  await clearRemoteOrdersAndEvents()
 }
 
 export function useStore<T>(selector: (d: StoreData) => T): T {
@@ -314,6 +489,11 @@ export function bulkUpdateProducts(ids: string[], field: BulkField, value: numbe
 }
 
 /* ----------------------------- orders ----------------------------- */
+/** Persist orders locally (events excluded) + notify, without touching store_data sync. */
+function commitOrdersLocal() {
+  writeLocal()
+}
+
 export function createOrder(order: Omit<Order, 'id' | 'number' | 'createdAt' | 'status'>): Order {
   const full: Order = {
     ...order,
@@ -322,9 +502,9 @@ export function createOrder(order: Omit<Order, 'id' | 'number' | 'createdAt' | '
     createdAt: Date.now(),
     status: 'pending',
   }
-  // local optimistic update
+  // optimistic local insert
   data = { ...data, orders: [full, ...data.orders] }
-  // decrement stock locally + sync to Supabase
+  // decrement stock locally + sync store_data to Supabase
   setData((d) => {
     for (const it of full.items) {
       const p = d.products.find((x) => x.id === it.productId)
@@ -372,9 +552,8 @@ export function createOrder(order: Omit<Order, 'id' | 'number' | 'createdAt' | '
 }
 
 export function updateOrderStatus(id: string, status: Order['status']) {
-  data = { ...data, orders: data.orders.map((o) => o.id === id ? { ...o, status } : o) }
-  persist()
-  // persist to Supabase
+  data = { ...data, orders: data.orders.map((o) => (o.id === id ? { ...o, status } : o)) }
+  commitOrdersLocal()
   supabase
     .from('orders')
     .update({ status, data: data.orders.find((o) => o.id === id) })
@@ -384,7 +563,7 @@ export function updateOrderStatus(id: string, status: Order['status']) {
 
 export function deleteOrder(id: string) {
   data = { ...data, orders: data.orders.filter((o) => o.id !== id) }
-  persist()
+  commitOrdersLocal()
   supabase
     .from('orders')
     .delete()
@@ -392,13 +571,33 @@ export function deleteOrder(id: string) {
     .then(({ error }) => { if (error) console.warn('[supabase] order delete failed:', error.message) })
 }
 
-/* ----------------------------- analytics (local only) ----------------------------- */
+/* ----------------------------- analytics ----------------------------- */
 export function track(e: Omit<AnalyticsEvent, 'id' | 'ts'>) {
   const evt: AnalyticsEvent = { ...e, id: uid('ev'), ts: Date.now() }
-  // Mutate locally without triggering Supabase sync
+  // In-memory only (events are pulled from Supabase, never persisted to localStorage).
   data = { ...data, events: [...data.events, evt].slice(-5000) }
-  try { localStorage.setItem(KEY, JSON.stringify(data)) } catch {}
-  listeners.forEach((l) => l())
+  notify()
+  if (typeof window === 'undefined' || previewMode) return
+  // queue for Supabase
+  eventQueue.push({
+    type: evt.type,
+    ts: new Date(evt.ts).toISOString(),
+    path: evt.path ?? null,
+    product_id: evt.productId ?? null,
+    value: evt.value ?? null,
+    order_id: evt.orderId ?? null,
+    session: sessionId(),
+  })
+  // Purchases are revenue-critical — flush immediately; everything else batches.
+  if (evt.type === 'purchase') flushEvents()
+  else scheduleEventFlush()
+}
+
+/** Load demo analytics for preview. Local-only; suppresses remote pulls this session. */
+export function loadDemo(builder: (d: StoreData) => StoreData) {
+  previewMode = true
+  data = builder(structuredClone(data))
+  notify()
 }
 
 /* ----------------------------- sales log ----------------------------- */

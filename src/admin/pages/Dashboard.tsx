@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { DollarSign, Eye, MousePointerClick, Package, Sparkles, TrendingUp } from 'lucide-react'
-import { formatMoney, setData, uid, useStore } from '../../data/store'
+import { formatMoney, loadDemo, uid, useStore } from '../../data/store'
 import { computeMetrics, dailySeries, DAY, lastNDays, topProducts } from '../analytics'
 import type { AnalyticsEvent, Order } from '../../data/types'
 
@@ -35,9 +35,9 @@ function FunnelStep({ label, value, pct, width }: { label: string; value: number
   )
 }
 
-/** Seed realistic demo analytics so the dashboard is alive on first run */
+/** Seed realistic demo analytics so the dashboard is alive on first run (local preview only) */
 function generateDemo(productIds: string[], orderBuilder: () => void) {
-  setData((d) => {
+  loadDemo((d) => {
     const events: AnalyticsEvent[] = []
     const orders: Order[] = []
     const paths = ['/', '/shop', '/product/airbus-a330-keychain', '/product/remove-before-flight-tag', '/collections/aircraft', '/about']

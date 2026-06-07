@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { Download, Loader2, RotateCcw, Save, Trash2, Upload } from 'lucide-react'
-import { getData, resetStore, saveAll, setData, useStore } from '../../data/store'
+import { clearOrdersAndAnalytics, getData, resetStore, saveAll, setData, useStore } from '../../data/store'
 import type { StoreSettings } from '../../data/types'
 import { PageHeader, Toast } from '../ui'
 
@@ -31,7 +31,11 @@ export default function Settings() {
     r.onload = () => { try { const parsed = JSON.parse(r.result as string); setData(() => parsed); setForm(parsed.settings); flash('Data imported ✓') } catch { alert('Invalid backup file') } }
     r.readAsText(file)
   }
-  function clearAnalytics() { if (confirm('Clear all analytics events and orders? Products are kept.')) setData((d) => { d.events = []; d.orders = []; return d }), flash('Analytics cleared') }
+  async function clearAnalytics() {
+    if (!confirm('Clear all analytics events and orders everywhere? Products are kept. This cannot be undone.')) return
+    await clearOrdersAndAnalytics()
+    flash('Orders & analytics cleared')
+  }
 
   const Field = ({ label, children, hint }: any) => <div><label className="label">{label}</label>{children}{hint && <p className="mt-1 text-xs text-slatey">{hint}</p>}</div>
 
