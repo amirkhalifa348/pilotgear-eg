@@ -4,8 +4,8 @@ import { buildSeed } from './seed'
 import { STORE_ID, supabase } from './supabase'
 import { pixel } from '../lib/pixel'
 
-const KEY = 'pilotgear:data:v9'
-const CART_KEY = 'pilotgear:cart:v9'
+const KEY = 'pilotgear:data:v10'
+const CART_KEY = 'pilotgear:cart:v10'
 const ADMIN_KEY = 'pilotgear:admin-auth'
 // Tracks when this browser last wrote data locally — shared across tabs via localStorage
 const MODIFIED_AT_KEY = 'pilotgear:modified-at'
