@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, GripVertical, Loader2, Plus, Trash2, Upload, X } from 'lucide-react'
-import { saveAll, uid, upsertProduct, useStore } from '../../data/store'
+import { saveAll, uid, uploadImage, upsertProduct, useStore } from '../../data/store'
 import type { Product, ProductVariant } from '../../data/types'
 import { Toast } from '../ui'
 
@@ -27,6 +27,7 @@ export default function ProductEditor() {
   const [p, setP] = useState<Product>(() => existing ? structuredClone(existing) : { ...emptyProduct(), collectionId: collections[0]?.id || '' })
   const [toast, setToast] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [uploading, setUploading] = useState(0)
   const [slugTouched, setSlugTouched] = useState(!!existing)
 
   const set = <K extends keyof Product>(k: K, v: Product[K]) => setP((x) => ({ ...x, [k]: v }))
@@ -35,24 +36,41 @@ export default function ProductEditor() {
     setP((x) => ({ ...x, title: v, slug: slugTouched ? x.slug : slugify(v) }))
   }
 
-  function addImages(files: FileList | null) {
+  // Images are uploaded to Supabase Storage and stored as URLs (never base64 —
+  // base64 bloats the store and breaks saving).
+  async function addImages(files: FileList | null) {
     if (!files) return
-    Array.from(files).forEach((f) => {
-      const reader = new FileReader()
-      reader.onload = () => setP((x) => ({ ...x, images: [...x.images, reader.result as string] }))
-      reader.readAsDataURL(f)
-    })
+    const list = Array.from(files)
+    setUploading((n) => n + list.length)
+    for (const f of list) {
+      try {
+        const url = await uploadImage(f)
+        setP((x) => ({ ...x, images: [...x.images, url] }))
+      } catch (e) {
+        console.warn('[upload] image failed', e)
+        alert('Image upload failed. Check your connection and try again.')
+      } finally {
+        setUploading((n) => n - 1)
+      }
+    }
   }
 
   function updateVariant(i: number, patch: Partial<ProductVariant>) {
     setP((x) => ({ ...x, variants: (x.variants || []).map((v, n) => (n === i ? { ...v, ...patch } : v)) }))
   }
 
-  function setVariantImage(i: number, file: File | null | undefined) {
+  async function setVariantImage(i: number, file: File | null | undefined) {
     if (!file) return
-    const reader = new FileReader()
-    reader.onload = () => updateVariant(i, { image: reader.result as string })
-    reader.readAsDataURL(file)
+    setUploading((n) => n + 1)
+    try {
+      const url = await uploadImage(file)
+      updateVariant(i, { image: url })
+    } catch (e) {
+      console.warn('[upload] variant image failed', e)
+      alert('Image upload failed. Check your connection and try again.')
+    } finally {
+      setUploading((n) => n - 1)
+    }
   }
 
   function addVariant() {
@@ -68,6 +86,7 @@ export default function ProductEditor() {
 
   async function save() {
     if (!p.title.trim()) { alert('Please enter a product title'); return }
+    if (uploading > 0) { alert('Please wait for images to finish uploading.'); return }
     setSaving(true)
     const final = { ...p, slug: p.slug || slugify(p.title), highlights: p.highlights.filter(Boolean), specs: p.specs.filter((s) => s.label || s.value), images: p.images.length ? p.images : ['/brand/logo.png'] }
     upsertProduct(final)
@@ -88,7 +107,7 @@ export default function ProductEditor() {
         <h1 className="font-head text-2xl font-extrabold text-navy-900">{existing ? 'Edit product' : 'New product'}</h1>
         <div className="flex gap-2">
           <Link to="/admin/products" className="btn-ghost">Cancel</Link>
-          <button onClick={save} disabled={saving} className="btn-primary disabled:opacity-60">{saving && <Loader2 size={16} className="animate-spin" />} {saving ? 'Saving…' : 'Save product'}</button>
+          <button onClick={save} disabled={saving || uploading > 0} className="btn-primary disabled:opacity-60">{(saving || uploading > 0) && <Loader2 size={16} className="animate-spin" />} {uploading > 0 ? `Uploading ${uploading}…` : saving ? 'Saving…' : 'Save product'}</button>
         </div>
       </div>
 
@@ -248,7 +267,7 @@ export default function ProductEditor() {
 
       <div className="mt-6 flex justify-end gap-2">
         <Link to="/admin/products" className="btn-ghost">Cancel</Link>
-        <button onClick={save} className="btn-primary">Save product</button>
+        <button onClick={save} disabled={saving || uploading > 0} className="btn-primary disabled:opacity-60">{uploading > 0 ? `Uploading ${uploading}…` : 'Save product'}</button>
       </div>
       <Toast show={toast} message="Product saved ✓" />
     </div>

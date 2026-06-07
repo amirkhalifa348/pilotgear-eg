@@ -616,6 +616,25 @@ export function deleteSaleLog(id: string) {
   })
 }
 
+/* ----------------------------- image upload ----------------------------- */
+/**
+ * Upload an image to Supabase Storage and return its public URL.
+ * Images MUST go through here, never stored as base64 in product data — a few
+ * base64 images bloat the store_data blob past the localStorage limit and make
+ * every save a multi-MB upload that intermittently fails.
+ */
+export async function uploadImage(file: File): Promise<string> {
+  const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg'
+  const path = `${uid('img')}.${ext}`
+  const { error } = await supabase.storage.from('product-images').upload(path, file, {
+    cacheControl: '31536000',
+    upsert: false,
+    contentType: file.type || undefined,
+  })
+  if (error) throw error
+  return supabase.storage.from('product-images').getPublicUrl(path).data.publicUrl
+}
+
 /* ----------------------------- messages ----------------------------- */
 export async function sendContactMessage(input: { name: string; email: string; phone?: string; subject?: string; message: string }) {
   const { error } = await supabase.from('messages').insert({
