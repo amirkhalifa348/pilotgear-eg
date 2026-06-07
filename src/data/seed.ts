@@ -449,7 +449,7 @@ export const seedSettings: StoreSettings = {
   announcement: 'Free shipping on orders over 800 EGP · Cash on delivery across Egypt 🇪🇬',
   adminPassword: 'pilotgear',
   ntfyTopic: '',
-  facebookPixelId: '',
+  facebookPixelId: '1365882082050075',
 }
 
 export const seedHomepage: PageBlock[] = [
