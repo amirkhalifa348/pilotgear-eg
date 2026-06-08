@@ -6,7 +6,7 @@ import { pixel } from '../lib/pixel'
 import QtyStepper from '../components/ui/QtyStepper'
 import AddToCartButton from '../components/ui/AddToCartButton'
 import ProductCard from '../components/storefront/ProductCard'
-import Product3DView from '../components/storefront/Product3DView'
+import ProductZoomImage from '../components/storefront/ProductZoomImage'
 import NotFound from './NotFound'
 
 export default function ProductPage() {
@@ -57,7 +57,7 @@ export default function ProductPage() {
       <div className="container-px grid gap-10 py-8 lg:grid-cols-2">
         {/* Gallery */}
         <div className="lg:sticky lg:top-24 lg:self-start">
-          <Product3DView
+          <ProductZoomImage
             key={activeImg}
             src={product.images[activeImg]}
             alt={product.title}
