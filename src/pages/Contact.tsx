@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Instagram, Loader2, Mail, MapPin, Send } from 'lucide-react'
 import { sendContactMessage, useStore } from '../data/store'
+import { pixel } from '../lib/pixel'
 
 export default function Contact() {
   const s = useStore((d) => d.settings)
@@ -17,6 +18,7 @@ export default function Contact() {
     setSending(true)
     try {
       await sendContactMessage(form)
+      pixel('Lead', { content_name: form.subject || 'Contact form' })
       setSent(true)
     } catch (err: any) {
       setError(err?.message || 'Could not send. Please try again or email us directly.')

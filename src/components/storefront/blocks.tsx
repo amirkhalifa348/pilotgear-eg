@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { ArrowRight, Gift, Plane, ShieldCheck, Sparkles, Truck } from 'lucide-react'
 import type { PageBlock, Product, Collection } from '../../data/types'
 import { formatMoney, useStore } from '../../data/store'
+import { pixel } from '../../lib/pixel'
 import ProductCard from './ProductCard'
 
 const iconMap: Record<string, any> = { truck: Truck, shield: ShieldCheck, gift: Gift, plane: Plane }
@@ -207,7 +208,7 @@ function Newsletter({ p }: { p: any }) {
         {done ? (
           <p className="mt-6 inline-block rounded-full bg-gold px-6 py-3 font-semibold text-navy-deep">You're on the list! ✈️</p>
         ) : (
-          <form className="mx-auto mt-6 flex max-w-md flex-col gap-3 sm:flex-row" onSubmit={(e) => { e.preventDefault(); if (email) setDone(true) }}>
+          <form className="mx-auto mt-6 flex max-w-md flex-col gap-3 sm:flex-row" onSubmit={(e) => { e.preventDefault(); if (email) { pixel('CompleteRegistration', { content_name: 'Newsletter signup' }); setDone(true) } }}>
             <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="your@email.com" className="input flex-1 border-transparent bg-white/10 text-white placeholder:text-white/50" />
             <button className="btn-gold whitespace-nowrap">Join the crew</button>
           </form>

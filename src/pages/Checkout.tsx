@@ -43,6 +43,7 @@ export default function Checkout() {
     e.preventDefault()
     if (!validate()) return
     setSubmitting(true)
+    pixel('AddPaymentInfo', { value: total, currency: 'EGP', num_items: lines.reduce((s, l) => s + l.c.qty, 0), content_ids: lines.map((l) => l.p.id) })
     const items: OrderItem[] = lines.map((l) => {
       const variant = l.p.variants?.find((v) => v.id === l.c.variantId)
       return { productId: l.p.id, title: l.p.title, variantName: variant?.name, price: l.p.price, qty: l.c.qty, image: variant?.image || l.p.images[0] }
