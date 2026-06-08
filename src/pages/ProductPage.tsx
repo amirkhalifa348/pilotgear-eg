@@ -6,6 +6,7 @@ import { pixel } from '../lib/pixel'
 import QtyStepper from '../components/ui/QtyStepper'
 import AddToCartButton from '../components/ui/AddToCartButton'
 import ProductCard from '../components/storefront/ProductCard'
+import Product3DView from '../components/storefront/Product3DView'
 import NotFound from './NotFound'
 
 export default function ProductPage() {
@@ -56,10 +57,12 @@ export default function ProductPage() {
       <div className="container-px grid gap-10 py-8 lg:grid-cols-2">
         {/* Gallery */}
         <div className="lg:sticky lg:top-24 lg:self-start">
-          <div className="relative aspect-square overflow-hidden rounded-3xl border border-navy-50 bg-paper">
-            {discount > 0 && <span className="absolute left-4 top-4 z-10 rounded-full bg-gold px-3 py-1 text-xs font-bold text-navy-deep">Save {discount}%</span>}
-            <img src={product.images[activeImg]} alt={product.title} className="h-full w-full object-contain p-8" />
-          </div>
+          <Product3DView
+            key={activeImg}
+            src={product.images[activeImg]}
+            alt={product.title}
+            badge={discount > 0 ? <span className="absolute left-4 top-4 z-10 rounded-full bg-gold px-3 py-1 text-xs font-bold text-navy-deep">Save {discount}%</span> : null}
+          />
           {product.images.length > 1 && (
             <div className="mt-4 flex flex-wrap gap-3">
               {product.images.map((image, i) => (
